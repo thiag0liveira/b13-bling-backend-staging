@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>B13 — Promoções</title>
+<style>
+*{box-sizing:border-box;font-family:Arial,Helvetica,sans-serif;margin:0;padding:0}
+:root{--mag:#FF0082;--bg:#0f0d24;--card:#151233;--borda:#2c2660;--muted:#9a95c9;--ok:#3ce88a;--warn:#ffd23f;--ruim:#ff8aa3}
+body{background:var(--bg);color:#fff;min-height:100vh}
+.top{background:linear-gradient(180deg,#2b2870,#262366);border-bottom:3px solid var(--mag);padding:10px 16px;display:flex;align-items:center;gap:8px;position:sticky;top:0;z-index:5;flex-wrap:wrap}
+.top img{height:34px}.top .t{font-weight:900;font-size:16px}.top .sp{flex:1}
+.btn{border:none;border-radius:9px;font-weight:800;cursor:pointer;font-size:12.5px;padding:9px 13px;color:#fff;display:inline-block}
+.btn-ghost{background:#1c1846;border:1px solid #3a3480}.btn-mag{background:var(--mag)}.btn-ok{background:#0e5a32;border:1px solid var(--ok)}.btn-sm{padding:5px 9px;font-size:11.5px}
+.wrap{padding:14px;display:grid;gap:12px;max-width:1000px;margin:0 auto}
+input,select,textarea{padding:9px 10px;border-radius:9px;border:1px solid #37327a;background:#0f0d24;color:#fff;font-size:14px;width:100%}
+.card{background:var(--card);border:1px solid var(--borda);border-radius:12px;padding:13px;min-width:0}
+.muted{color:var(--muted);font-size:12px;line-height:1.45}
+.tag{display:inline-block;font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:6px;white-space:nowrap}
+.tag.ativa{background:#11352a;color:#6be3a8}.tag.agendada{background:#0d2a44;color:#7fd0ff}.tag.encerrada{background:#2a2750;color:#a9a4d8}.tag.cancelada{background:#3d1020;color:var(--ruim)}
+.tag.alta{background:#11352a;color:#6be3a8}.tag.media{background:#3a2a0a;color:var(--warn)}.tag.baixa{background:#3d1020;color:var(--ruim)}
+.pr{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.pr .nm{flex:1 1 220px;min-width:0}.pr .nm b{font-size:15px}
+.fundo{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;z-index:200;overflow-y:auto;padding:72px 8px 12px}.fundo.aberto{display:block}
+.folha{background:#151233;border:1px solid var(--borda);border-radius:14px;padding:14px;width:100%;max-width:820px;margin:0 auto}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:9px}.lb{font-size:11px;color:var(--muted);display:block;margin-bottom:3px;font-weight:700}
+.it{border:1px solid #2c2660;border-radius:10px;padding:9px;margin-bottom:8px;background:#120f2c}
+.it .l1{display:flex;gap:8px;align-items:flex-start}.it .l1 .n{flex:1;min-width:0;font-weight:700;font-size:13.5px;line-height:1.3}
+.it .l2{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:7px}.it .l2>div{flex:1 1 120px;min-width:100px}
+.alerta{border-radius:8px;padding:7px 10px;font-size:12.5px;margin-top:8px;line-height:1.4}.alerta.erro{background:#3a1020;border:1px solid #ff5f8a}.alerta.aviso{background:#3a2a0a;border:1px solid #8a6a1a;color:#ffe08a}.alerta.ok{background:#0e3a22;border:1px solid var(--ok)}
+.res{max-height:240px;overflow:auto;border:1px solid #2c2660;border-radius:9px;margin-top:6px}.res div{padding:8px 10px;border-bottom:1px solid #1d1946;font-size:13px;cursor:pointer}.res div:hover{background:#1c1846}
+.spin{display:inline-block;width:18px;height:18px;border:3px solid #514c96;border-top-color:var(--mag);border-radius:50%;animation:spin .8s linear infinite;vertical-align:middle}@keyframes spin{to{transform:rotate(360deg)}}
+.ia{border:1px dashed #7a4cc2;background:#1b1536}
+</style>
+<script src="/nav.js"></script>
+</head>
+<body><script>
+  (function(){ if(!b13RequireLogin()) return; if(!b13BloquearSeSemAcesso("/promocoes")) return;
+    document.addEventListener("DOMContentLoaded",function(){ const nav=document.createElement("div"); nav.innerHTML=b13RenderNav("/promocoes"); document.body.insertBefore(nav,document.body.firstChild); }); })();
+</script>
+<div class="top"><img src="/logo"><div class="t">🔥 Promoções</div><div class="sp"></div><button class="btn btn-mag" onclick="nova()">➕ Nova promoção</button></div>
+<div class="wrap">
+  <div class="card muted">O preço da promoção entra nos pedidos <b>criados enquanto ela estiver valendo</b>. Pedido já criado antes continua com o preço que foi gravado nele. O último dia vale inteiro.</div>
+  <div id="lista"><div class="card muted"><span class="spin"></span> Carregando…</div></div>
+</div>
+<div class="fundo" id="fundo"><div class="folha" id="folha"></div></div>
+<script>
+const B = location.protocol.indexOf("http") === 0 ? "" : "https://app.b13bebidas.com.br";
+const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+function token() { try { return (b13GetSession() || {}).token || ""; } catch (e) { return ""; } }
+async function api(p, op) { op = op || {}; const r = await fetch(B + p, { ...op, headers: { "Content-Type": "application/json", "X-Auth-Token": token() } }); const j = await r.json().catch(() => ({})); return { ok: r.ok, j }; }
+const brl = n => n == null ? "—" : "R$ " + Number(n).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const dmy = d => d ? d.split("-").reverse().join("/") : "—";
+const hojeIso = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
+const somaDias = (d, n) => new Date(Date.parse(d + "T12:00:00Z") + n * 86400000).toISOString().slice(0, 10);
+const difDias = (a, b) => Math.round((Date.parse(b + "T12:00:00Z") - Date.parse(a + "T12:00:00Z")) / 86400000);
+const V = id => document.getElementById(id), VAL = id => (V(id) ? V(id).value : "");
+const APLICA = { atacado: "Atacado", varejo: "Varejo", ambos: "Os dois" };
+let PROMOS = [], ED = null, ENC = null;
+function abrir(h) { V("folha").innerHTML = h; V("fundo").classList.add("aberto"); V("fundo").scrollTop = 0; }
+function fechar() { V("fundo").classList.remove("aberto"); ED = null; ENC = null; }
+
+async function carregar() {
+  const { ok, j } = await api("/api/promocoes"); if (!ok) { V("lista").innerHTML = `<div class="card"><div class="alerta erro">${esc(j.erro || "Não consegui carregar.")}</div></div>`; return; }
+  PROMOS = j.promocoes || [];
+  V("lista").innerHTML = PROMOS.length ? PROMOS.map(p => {
+    const podeCancelar = p.status === "ativa" || p.status === "agendada", podeExcluir = p.status === "agendada" || p.status === "cancelada", dias = difDias(p.inicio, p.fim) + 1;
+    return `<div class="card" style="margin-bottom:8px"><div class="pr"><div class="nm"><b>${esc(p.nome)}</b> <span class="tag ${p.status}">${p.status}</span>${p.origem === "encarte" ? ' <span class="tag media" title="criada a partir da foto do encarte">📷 encarte</span>' : ""}
+      <div class="muted">${dmy(p.inicio)} a ${dmy(p.fim)} · ${dias} dia${dias > 1 ? "s" : ""} · ${p.qtdProdutos} produto${p.qtdProdutos > 1 ? "s" : ""}${p.obs ? " · " + esc(p.obs) : ""}</div></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" onclick="ver('${p.id}')">👁 Produtos</button>${p.status !== "cancelada" ? `<button class="btn btn-ghost btn-sm" onclick="editar('${p.id}')">✏️ Editar</button>` : ""}<button class="btn btn-ghost btn-sm" onclick="duplicar('${p.id}')">⧉ Duplicar</button>${podeCancelar ? `<button class="btn btn-ghost btn-sm" onclick="cancelar('${p.id}')">⛔ Cancelar</button>` : ""}${podeExcluir ? `<button class="btn btn-ghost btn-sm" onclick="excluir('${p.id}')">🗑</button>` : ""}</div></div></div>`; }).join("")
+    : `<div class="card"><div class="muted" style="text-align:center;padding:14px">Nenhuma promoção ainda. Toque em "➕ Nova promoção" ou envie a foto do encarte.</div></div>`;
+}
+function ver(id) { const p = PROMOS.find(x => x.id === id); if (!p) return;
+  abrir(`<div class="pr"><h3 style="flex:1">${esc(p.nome)}</h3><button class="btn btn-ghost btn-sm" onclick="fechar()">✕ Fechar</button></div><div class="muted" style="margin:4px 0 8px">${dmy(p.inicio)} a ${dmy(p.fim)} · ${p.status}</div>
+   ${(p.itens || []).map(i => `<div class="it"><div class="l1"><div class="n">${esc(i.nome)} <span class="muted">${esc(i.codigo)}</span></div><b style="color:var(--warn)">${brl(i.preco)}</b></div><div class="muted">vale para ${APLICA[i.aplica]}</div></div>`).join("")}`); }
+async function cancelar(id) { if (!confirm("Cancelar esta promoção? Os preços voltam ao normal agora; pedidos já criados não mudam.")) return; const { ok, j } = await api(`/api/promocoes/${id}/cancelar`, { method: "POST", body: "{}" }); if (!ok) { alert(j.erro || "Não consegui."); return; } carregar(); }
+async function excluir(id) { if (!confirm("Excluir esta promoção?")) return; const { ok, j } = await api(`/api/promocoes/${id}`, { method: "DELETE" }); if (!ok) { alert(j.erro || "Não consegui."); return; } carregar(); }
+
+// ---------- editor
+function nova() { ED = { id: null, nome: "", inicio: hojeIso(), dias: 7, fim: somaDias(hojeIso(), 6), obs: "", itens: [], origem: "manual" }; renderEd(); }
+function editar(id) { const p = PROMOS.find(x => x.id === id); ED = { id: p.id, nome: p.nome, inicio: p.inicio, fim: p.fim, dias: difDias(p.inicio, p.fim) + 1, obs: p.obs || "", itens: (p.itens || []).map(i => ({ ...i, preco: String(i.preco).replace(".", ",") })), origem: p.origem }; renderEd(); }
+function duplicar(id) { const p = PROMOS.find(x => x.id === id), h = hojeIso(), d = difDias(p.inicio, p.fim) + 1; ED = { id: null, nome: p.nome + " (cópia)", inicio: h, dias: d, fim: somaDias(h, d - 1), obs: p.obs || "", itens: (p.itens || []).map(i => ({ ...i, preco: String(i.preco).replace(".", ",") })), origem: "manual" }; renderEd(); }
+function lerCampos() { if (!ED) return; ED.nome = VAL("eNome"); ED.obs = VAL("eObs"); ED.inicio = VAL("eInicio") || ED.inicio; (ED.itens || []).forEach((i, k) => { const p = V("ep" + k), a = V("ea" + k); if (p) i.preco = p.value; if (a) i.aplica = a.value; }); }
+function mudouDias() { ED.inicio = VAL("eInicio"); const n = Math.max(1, Math.min(366, Math.round(Number(VAL("eDias")) || 1))); ED.dias = n; ED.fim = somaDias(ED.inicio, n - 1); V("eFim").value = ED.fim; resumoPeriodo(); }
+function mudouFim() { ED.inicio = VAL("eInicio"); const f = VAL("eFim"); if (f && f >= ED.inicio) { ED.fim = f; ED.dias = difDias(ED.inicio, f) + 1; V("eDias").value = ED.dias; } resumoPeriodo(); }
+function resumoPeriodo() { const el = V("ePer"); if (el) el.textContent = `Vale de ${dmy(ED.inicio)} a ${dmy(ED.fim)} (${ED.dias} dia${ED.dias > 1 ? "s" : ""}, o último dia vale inteiro).`; }
+function renderEd() {
+  const itens = ED.itens.map((i, k) => { const p = Number(String(i.preco).replace(",", ".")) || 0, ref = i.aplica === "atacado" ? i.refAtacado : i.refVarejo, desc = ref > 0 && p > 0 ? Math.round((1 - p / ref) * 100) : null;
+    return `<div class="it"><div class="l1"><div class="n">${esc(i.nome)} <span class="muted">${esc(i.codigo || "")}</span><div class="muted" style="font-weight:400">tabela: varejo ${brl(i.refVarejo)} · atacado ${brl(i.refAtacado)}${i.custo ? " · custo " + brl(i.custo) : ""}</div></div><button class="btn btn-ghost btn-sm" onclick="tirar(${k})">✕</button></div>
+      <div class="l2"><div><label class="lb">Preço da promoção (R$)</label><input id="ep${k}" inputmode="decimal" value="${esc(i.preco)}" placeholder="0,00" oninput="conf(${k})"></div><div><label class="lb">Vale para</label><select id="ea${k}" onchange="conf(${k})">${Object.entries(APLICA).map(([a, t]) => `<option value="${a}" ${i.aplica === a ? "selected" : ""}>${t}</option>`).join("")}</select></div><div id="ec${k}" class="muted" style="flex:1 1 140px"></div></div></div>`; }).join("");
+  abrir(`<div class="pr"><h3 style="flex:1">${ED.id ? "✏️ Editar promoção" : "➕ Nova promoção"}</h3><button class="btn btn-ghost btn-sm" onclick="fechar()">✕ Fechar</button></div>
+   <div class="grid" style="margin-top:8px"><div style="grid-column:1/-1"><label class="lb">Nome da promoção</label><input id="eNome" value="${esc(ED.nome)}" placeholder="Ex.: Semana da cerveja"></div>
+    <div><label class="lb">Começa em</label><input id="eInicio" type="date" value="${esc(ED.inicio)}" onchange="mudouDias()"></div><div><label class="lb">Quantos dias vale</label><input id="eDias" type="number" min="1" max="366" value="${ED.dias}" oninput="mudouDias()"></div><div><label class="lb">Último dia (opcional)</label><input id="eFim" type="date" value="${esc(ED.fim)}" onchange="mudouFim()"></div>
+    <div style="grid-column:1/-1"><label class="lb">Observação (opcional)</label><input id="eObs" value="${esc(ED.obs)}" placeholder="Ex.: encarte de novembro"></div></div>
+   <div class="muted" id="ePer" style="margin:6px 0"></div>
+   <div class="card ia" style="margin:10px 0"><div class="pr"><div class="nm"><b>📷 Ler o encarte com IA</b><div class="muted">Tire ou envie a foto do encarte. A IA lê os produtos e preços, sugere o produto do cadastro e o período, e você confere antes de salvar.</div></div><button class="btn btn-mag" onclick="V('eFoto').click()">Enviar foto</button><input id="eFoto" type="file" accept="image/*" multiple style="display:none" onchange="lerEncarte(this.files)"></div><div id="eIa"></div></div>
+   <div class="pr" style="margin:6px 0"><b style="flex:1">Produtos (${ED.itens.length})</b><span class="muted">Aplicar a todos:</span><select id="eTodos" style="width:auto" onchange="aplicaTodos(this.value)"><option value="">—</option>${Object.entries(APLICA).map(([a, t]) => `<option value="${a}">${t}</option>`).join("")}</select></div>
+   <input id="eBusca" placeholder="🔎 Buscar produto para adicionar (nome ou código)" oninput="buscaProd()"><div class="res" id="eRes" style="display:none"></div>
+   <div style="margin-top:8px" id="eItens">${itens || '<div class="muted" style="padding:10px;text-align:center">Nenhum produto ainda. Busque acima ou envie a foto do encarte.</div>'}</div>
+   <div id="eMsg"></div><div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-ghost" style="flex:1" onclick="fechar()">Cancelar</button><button class="btn btn-mag" style="flex:2" onclick="salvar()">💾 Salvar promoção</button></div>`);
+  resumoPeriodo(); ED.itens.forEach((_, k) => conf(k));
+}
+function conf(k) { const i = ED.itens[k], p = Number(String(VAL("ep" + k)).replace(",", ".")) || 0, a = VAL("ea" + k), ref = a === "atacado" ? i.refAtacado : i.refVarejo, el = V("ec" + k); if (!el) return; let t = "";
+  if (p > 0 && ref > 0) { const d = Math.round((1 - p / ref) * 100); t = d > 0 ? `<span style="color:var(--ok)">−${d}% sobre ${a === "atacado" ? "o atacado" : "o varejo"}</span>` : `<span style="color:var(--warn)">não é menor que o preço atual (${brl(ref)})</span>`; }
+  if (p > 0 && i.custo > 0 && p < i.custo) t += ` <span style="color:var(--ruim)">⚠ abaixo do custo</span>`; el.innerHTML = t; }
+function tirar(k) { lerCampos(); ED.itens.splice(k, 1); renderEd(); }
+function aplicaTodos(v) { if (!v) return; lerCampos(); ED.itens.forEach(i => i.aplica = v); renderEd(); }
+let _tb = null;
+function buscaProd() { clearTimeout(_tb); const q = VAL("eBusca").trim(), box = V("eRes"); if (q.length < 2) { box.style.display = "none"; return; }
+  _tb = setTimeout(async () => { const { j } = await api("/api/promocoes/produtos?q=" + encodeURIComponent(q)); const L = j.produtos || []; window._resProd = L; box.style.display = ""; box.innerHTML = L.length ? L.map((p, x) => `<div onclick="addProd(${x})">${esc(p.nome)} <span class="muted">${esc(p.codigo)} · varejo ${brl(p.precoVarejo)} · atacado ${brl(p.precoAtacado)}</span></div>`).join("") : `<div class="muted">Nenhum produto encontrado.</div>`; }, 250); }
+function itemDe(p, preco, aplica) { return { produtoId: String(p.produtoId), nome: p.nome, codigo: p.codigo || "", preco: preco == null ? "" : String(preco).replace(".", ","), aplica: aplica || "ambos", refVarejo: p.precoVarejo || null, refAtacado: p.precoAtacado || null, custo: p.custo || null }; }
+function addProd(x) { lerCampos(); const p = window._resProd[x]; if (ED.itens.some(i => i.produtoId === String(p.produtoId))) { V("eMsg").innerHTML = `<div class="alerta aviso">"${esc(p.nome)}" já está na lista.</div>`; return; } ED.itens.unshift(itemDe(p, "", "ambos")); renderEd(); setTimeout(() => { const e = V("ep0"); if (e) e.focus(); }, 50); }
+async function salvar() {
+  lerCampos(); const body = { id: ED.id, nome: ED.nome, inicio: ED.inicio, fim: ED.fim, dias: ED.dias, obs: ED.obs, origem: ED.origem, itens: ED.itens.map(i => ({ produtoId: i.produtoId, nome: i.nome, codigo: i.codigo, preco: String(i.preco).replace(",", "."), aplica: i.aplica })) };
+  const { ok, j } = await api("/api/promocoes", { method: "POST", body: JSON.stringify(body) });
+  if (!ok) { V("eMsg").innerHTML = `<div class="alerta erro">${esc(j.erro || "Não consegui salvar.")}</div>`; return; }
+  const av = j.avisos || []; fechar(); await carregar(); if (av.length) alert("Promoção salva. Confira os avisos:\n\n• " + av.join("\n• "));
+}
+// ---------- leitura do encarte
+function reduzir(file, max) { return new Promise((res, rej) => { const fr = new FileReader(); fr.onerror = () => rej(new Error("não consegui abrir a foto")); fr.onload = () => { const im = new Image(); im.onerror = () => rej(new Error("a foto não parece uma imagem")); im.onload = () => { const e = Math.min(1, max / Math.max(im.width, im.height)), c = document.createElement("canvas"); c.width = Math.round(im.width * e); c.height = Math.round(im.height * e); c.getContext("2d").drawImage(im, 0, 0, c.width, c.height); res(c.toDataURL("image/jpeg", 0.86)); }; im.src = fr.result; }; fr.readAsDataURL(file); }); }
+async function lerEncarte(files) {
+  if (!files || !files.length) return; lerCampos(); const box = V("eIa"); box.innerHTML = `<div class="muted" style="margin-top:8px"><span class="spin"></span> Lendo o encarte… pode levar até 1 minuto.</div>`;
+  try { const imgs = []; for (const f of Array.from(files).slice(0, 4)) imgs.push(await reduzir(f, 1800));
+    const { ok, j } = await api("/api/promocoes/encarte", { method: "POST", body: JSON.stringify({ imagens: imgs }) });
+    if (!ok) { box.innerHTML = `<div class="alerta erro">${esc(j.erro || "A leitura falhou.")}</div>`; return; }
+    ENC = j; renderEnc();
+  } catch (e) { box.innerHTML = `<div class="alerta erro">${esc(e.message)}</div>`; }
+  V("eFoto").value = "";
+}
+function renderEnc() {
+  const j = ENC, box = V("eIa"), v = j.validade || {};
+  const cab = `<div style="margin-top:10px"><div class="muted">A IA leu <b>${j.itens.length}</b> produto${j.itens.length === 1 ? "" : "s"} em ${j.imagens} foto${j.imagens > 1 ? "s" : ""}. Confira cada linha (a IA pode errar) e marque o que entra na promoção.</div>
+    ${j.nomeSugerido && !ED.nome ? `<div class="alerta ok">Nome sugerido: <b>${esc(j.nomeSugerido)}</b> <button class="btn btn-ghost btn-sm" onclick="usarNome()">Usar</button></div>` : ""}
+    ${(v.inicio || v.fim) ? `<div class="alerta ok">Validade lida no encarte: <b>${esc(v.texto || (dmy(v.inicio) + " a " + dmy(v.fim)))}</b> <button class="btn btn-ghost btn-sm" onclick="usarDatas()">Usar estas datas</button></div>` : ""}
+    ${j.observacao ? `<div class="alerta aviso">${esc(j.observacao)}</div>` : ""}</div>`;
+  const rows = j.itens.map((x, k) => { const c = x.candidatos || [], sel = x.melhor || "", conv = x.convertido ? `<div class="muted" style="color:var(--warn)">${brl(x.precoLido)} por ${x.tipoPreco} de ${x.qtdNaEmbalagem} → ${brl(x.precoUnitario)} por unidade</div>` : (x.tipoPreco !== "unidade" ? `<div class="muted" style="color:var(--warn)">preço de ${x.tipoPreco}: confira se é por unidade</div>` : "");
+    return `<div class="it"><div class="l1"><input type="checkbox" id="xc${k}" ${sel ? "checked" : ""} style="width:auto;margin-top:3px"><div class="n">${esc(x.descricao)} <span class="tag ${x.confianca}">${x.confianca}</span>${x.condicao ? `<div class="muted" style="font-weight:400">${esc(x.condicao)}</div>` : ""}${conv}</div></div>
+      <div class="l2"><div style="flex:2 1 220px"><label class="lb">Produto do cadastro</label><select id="xp${k}"><option value="">— não achei / ignorar —</option>${c.map(p => `<option value="${esc(p.produtoId)}" ${p.produtoId === sel ? "selected" : ""}>${esc(p.nome)} (${brl(p.precoVarejo)})</option>`).join("")}</select></div>
+      <div><label class="lb">Preço (R$)</label><input id="xv${k}" inputmode="decimal" value="${String(x.precoUnitario).replace(".", ",")}"></div><div><label class="lb">Vale para</label><select id="xa${k}">${Object.entries(APLICA).map(([a, t]) => `<option value="${a}" ${x.sugestaoAplica === a ? "selected" : ""}>${t}</option>`).join("")}</select></div><button class="btn btn-ghost btn-sm" title="Buscar outro produto" onclick="buscaLinha(${k})">🔎</button></div><div id="xb${k}"></div></div>`; }).join("");
+  box.innerHTML = cab + `<div style="margin-top:8px">${rows}</div><div class="pr" style="margin-top:6px"><button class="btn btn-ok" onclick="addSelecionados()">➕ Adicionar os marcados à promoção</button><button class="btn btn-ghost" onclick="ENC=null;V('eIa').innerHTML=''">Descartar leitura</button></div>`;
+}
+function usarNome() { lerCampos(); ED.nome = ENC.nomeSugerido; V("eNome").value = ED.nome; }
+function usarDatas() { lerCampos(); const v = ENC.validade; if (v.inicio) ED.inicio = v.inicio; if (v.fim) { ED.fim = v.fim; ED.dias = Math.max(1, difDias(ED.inicio, v.fim) + 1); } else ED.fim = somaDias(ED.inicio, ED.dias - 1); const keep = ENC; renderEd(); ENC = keep; renderEnc(); }
+async function buscaLinha(k) { const q = prompt("Buscar produto no cadastro (nome ou código):", ENC.itens[k].descricao.split(" ").slice(0, 3).join(" ")); if (!q) return; const { j } = await api("/api/promocoes/produtos?q=" + encodeURIComponent(q)); const L = j.produtos || []; if (!L.length) { V("xb" + k).innerHTML = `<div class="alerta aviso">Nenhum produto com "${esc(q)}".</div>`; return; }
+  const s = V("xp" + k); L.slice(0, 12).forEach(p => { if (!Array.from(s.options).some(o => o.value === String(p.produtoId))) { const o = document.createElement("option"); o.value = p.produtoId; o.textContent = p.nome + " (" + brl(p.precoVarejo) + ")"; s.appendChild(o); } ENC.itens[k].candidatos = (ENC.itens[k].candidatos || []).concat([p]).filter((v, i, a) => a.findIndex(z => z.produtoId === v.produtoId) === i); }); s.value = String(L[0].produtoId); V("xc" + k).checked = true; V("xb" + k).innerHTML = `<div class="muted">Escolhi "${esc(L[0].nome)}"; mude na lista se for outro.</div>`; }
+function addSelecionados() { lerCampos(); let n = 0, ign = 0, dup = 0;
+  ENC.itens.forEach((x, k) => { if (!V("xc" + k).checked) return; const id = VAL("xp" + k); if (!id) { ign++; return; } const p = (x.candidatos || []).find(c => String(c.produtoId) === id) || { produtoId: id, nome: V("xp" + k).selectedOptions[0].textContent, codigo: "" }, preco = VAL("xv" + k), aplica = VAL("xa" + k);
+    const ex = ED.itens.find(i => i.produtoId === String(id)); if (ex) { ex.preco = preco; ex.aplica = aplica; dup++; } else { const it = itemDe(p, Number(String(preco).replace(",", ".")), aplica); it.preco = preco; ED.itens.push(it); n++; } });
+  if (ED.origem !== "encarte") ED.origem = "encarte"; const msg = `${n} produto${n === 1 ? "" : "s"} adicionado${n === 1 ? "" : "s"}${dup ? `, ${dup} atualizado${dup === 1 ? "" : "s"}` : ""}${ign ? `, ${ign} marcado${ign === 1 ? "" : "s"} sem produto escolhido (ignorado${ign === 1 ? "" : "s"})` : ""}.`; ENC = null; renderEd(); V("eMsg").innerHTML = `<div class="alerta ok">${msg} Confira os preços abaixo antes de salvar.</div>`; }
+carregar();
+</script>
+</body>
+</html>

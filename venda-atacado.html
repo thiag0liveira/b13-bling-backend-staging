@@ -987,7 +987,7 @@ function prodRow(p) {
       <div style="font-size:13px;font-weight:700">${esc(p.nome)}</div>
       <div style="margin-top:2px">
         <span class="badge ${p.origemPreco === 'atacado' ? 'badge-at' : 'badge-bl'}">${p.origemPreco === 'atacado' ? 'Atacado' : 'Bling'}</span>
-        <b style="color:#ffd23f;margin-left:6px">${brl(p.preco)}</b>
+        <b style="color:#ffd23f;margin-left:6px">${brl(p.preco)}</b>${p.promocao ? '<span style="background:#ff0082;color:#fff;border-radius:5px;padding:1px 5px;font-size:10px;font-weight:800;margin-left:4px">🔥 PROMO</span>' : ""}
         ${est != null ? `<span class="muted" style="font-size:11px;margin-left:6px">· estoque: ${est}${mult > 1 ? ` (fardo ${mult})` : ''}</span>` : ''}
       </div>
       ${temFardo ? `<div style="margin-top:4px">
@@ -1061,7 +1061,7 @@ async function buscarProd() {
   }
   const varejo = S.modoBusca === 'varejo';
   try {
-    const j = await fetch(B + (varejo ? "/api/buscar?nome=" : "/api/buscar-atacado?nome=") + encodeURIComponent(t)).then(r => r.json());
+    const j = await fetch(B + (varejo ? "/api/buscar?promo=1&nome=" : "/api/buscar-atacado?nome=") + encodeURIComponent(t)).then(r => r.json());
     if (meuId !== _prodReqId) return; // resposta atrasada de uma busca antiga — ignora, não sobrescreve a busca atual
     S.resultadosProd = (j.data || []).map(p => {
       var _ref2, _p$preco2;
@@ -1072,7 +1072,8 @@ async function buscarProd() {
         origemPreco: varejo ? 'bling' : p.origemPreco || 'bling',
         imagem: p.imagem || "",
         multiplo: varejo ? 1 : p.multiplo || 1,
-        estoque: p.estoque
+        estoque: p.estoque,
+        promocao: p.promocao && [p.promocao.atacado, p.promocao.varejo].includes(Number(p.preco)) ? p.promocao : null
       };
     });
     // preserva o texto digitado sem re-renderizar o input inteiro

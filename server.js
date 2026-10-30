@@ -1311,6 +1311,7 @@ window.B13_NAV_LINKS=[
   {grupo:"CADASTROS",href:"/listas-extras",label:"📑 Listas Extras",acoes:["acesso_listas_extras","editar_pedido"]},
   {grupo:"CADASTROS",href:"/fotos-produtos",label:"📷 Fotos e Imagens dos Produtos",acoes:["acesso_produtos_gestao","acesso_imagens","admin"]},
   {grupo:"CADASTROS",href:"/etiquetas",label:"🏷️ Etiquetas",acoes:["acesso_etiquetas","editar_pedido"]},
+  {grupo:"CADASTROS",href:"/promocoes",label:"🔥 Promoções",acoes:["acesso_tabela_varejo","acesso_tabela","admin"]},
 
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/contas-pagar",label:"📒 Contas a Pagar",acoes:["acesso_contas_pagar"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/custos",label:"💼 Custos e Folha",acoes:["acesso_custos"]},
@@ -3601,6 +3602,7 @@ app.get("/api/buscar",async(req,res)=>{
     { const PB=lerProdutosBling().porId; Object.values(porId).forEach(p=>{ const c=_precoConfirmado.get(String(p.id)), x=PB[String(p.id)];
         if(c&&Date.now()-c.em<PRECO_CONFIRMA_TTL&&c.preco>0) p.preco=c.preco; else if(!(p.precoLista>0)&&x&&Number(x.p)>0) p.preco=Number(x.p); delete p.precoLista; }); }
 
+    if(req.query.promo==="1") Object.values(porId).forEach(p=>_promoAplicaNoItem(p,p.id,{modo:req.query.atacado==="1"?"atacado":"varejo"})); // só as telas de VENDA pedem; tabela e etiquetas continuam vendo o preço normal
     res.json({data:Object.values(porId)});
   }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
 });
@@ -13492,6 +13494,95 @@ app.post("/api/custos/ficha/:fid",requireAcesso("acesso_custos"),(req,res)=>{
     salvarJSON(CUSTOS_FICHAS_FILE,fichas); addLog("funcionario-"+f.id,"ficha_de_custo",req.sessao?.funcionarioId||"",quem,{funcionario:f.nome,custoMensal:_round2(valores.salario+valores.encargos+valores.beneficios+valores.provisao)});
     res.json({ok:true,valores,custoMensal:_round2(valores.salario+valores.encargos+valores.beneficios+valores.provisao),ficha:fichas[f.id]});
   }catch(e){ res.status(500).json({erro:e.message}); } });
+// ===================== PROMOÇÕES =====================
+// Cada promoção tem período (início + dias, o último dia vale inteiro), produtos e, por produto, o preço e onde vale (atacado, varejo ou os dois).
+// O preço promocional entra na HORA em que o item é colocado no pedido (buscas das telas de venda): pedido já criado mantém o valor que foi gravado nele.
+const PROMOCOES_FILE=`${DATA_DIR}/promocoes.json`;
+function lerPromocoes(){ const d=lerJSON(PROMOCOES_FILE,null)||{}; d.lista||=[]; d.seq||=0; return d; }
+const _promoHojeBR=()=>new Date(Date.now()-3*3600e3).toISOString().slice(0,10);
+const _promoSomaDias=(dia,n)=>new Date(Date.parse(dia+"T12:00:00Z")+n*86400000).toISOString().slice(0,10);
+function _statusPromocao(p,hoje){ hoje=hoje||_promoHojeBR(); if(p.cancelada) return "cancelada"; if(hoje<p.inicio) return "agendada"; if(hoje>p.fim) return "encerrada"; return "ativa"; }
+let _promoCache={t:0,mapa:null};
+function _mapaPromoAtivo(){ // produtoId -> {atacado:{preco,promoId,nome,fim}, varejo:{...}}; em memória por poucos segundos
+  if(_promoCache.mapa&&Date.now()-_promoCache.t<4000) return _promoCache.mapa;
+  const hoje=_promoHojeBR(), M={}; lerPromocoes().lista.filter(p=>_statusPromocao(p,hoje)==="ativa").sort((a,b)=>(a.criadoEm||0)-(b.criadoEm||0)).forEach(p=>(p.itens||[]).forEach(i=>{
+    const id=String(i.produtoId), o=M[id]||(M[id]={}), v={preco:Number(i.preco),promoId:p.id,nome:p.nome,fim:p.fim};
+    if(i.aplica==="atacado"||i.aplica==="ambos") o.atacado=v; if(i.aplica==="varejo"||i.aplica==="ambos") o.varejo=v; })); // a mais recente vale quando há duas ativas
+  _promoCache={t:Date.now(),mapa:M}; return M; }
+const _promoInvalida=()=>{ _promoCache={t:0,mapa:null}; };
+function _promoDoProduto(produtoId,modo){ const o=_mapaPromoAtivo()[String(produtoId)]; return (o&&o[modo==="varejo"?"varejo":"atacado"])||null; }
+// aplica a promoção ao item devolvido por uma busca: o preço efetivo muda e o original fica guardado
+function _promoAplicaNoItem(p,idProd,opc){ try{ const pa=_promoDoProduto(idProd,"atacado"), pv=_promoDoProduto(idProd,"varejo"); if(!pa&&!pv) return p;
+    p.promocao={nome:(pa||pv).nome,fim:(pa||pv).fim,atacado:pa?pa.preco:null,varejo:pv?pv.preco:null};
+    if(opc&&opc.campos==="atacadoBling"){ // /api/buscar-atacado: precoAtacado, precoBling e preco
+      if(pa){ p.precoAtacadoOriginal=p.precoAtacado??null; p.precoAtacado=pa.preco; p.preco=pa.preco; }
+      if(pv){ p.precoBlingOriginal=p.precoBling??null; p.precoBling=pv.preco; if(!pa&&!(p.precoAtacado>0)){ p.preco=pv.preco; } } }
+    else { const alvo=(opc&&opc.modo==="atacado")?pa:pv; if(alvo){ p.precoOriginal=p.preco??null; p.preco=alvo.preco; if(opc&&opc.modo==="atacado"){ p.precoAtacadoOriginal=p.precoAtacado??null; p.precoAtacado=alvo.preco; } } else delete p.promocao; }
+  }catch(e){} return p; }
+const _promoNrm=x=>String(x||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9,.\s]/g," ").replace(/\s+/g," ").trim();
+function _promoTokens(t){ const stop=new Set(["de","da","do","das","dos","c","com","un","und","unid","cx","pct","kit","lt","ln","pet","vd","e","o","a"]); const T=[]; _promoNrm(t).replace(/(\d+)[,.](\d+)\s*(l|ml)\b/g,"$1$2$3").replace(/(\d+)\s*(ml|l|lt|g|kg)\b/g,"$1$2").split(" ").forEach(w=>{ w=w.replace(/lt$/,"l"); if(w&&!stop.has(w)) T.push(w); }); return T; }
+function _promoCandidatos(descricao,max){ const I=_promoTokens(descricao); if(!I.length) return []; const vol=I.find(w=>/^\d+(ml|l|g|kg)$/.test(w)), P=lerProdutosBling().porId, out=[];
+  Object.entries(P).forEach(([id,x])=>{ if(!x||!x.n||x.s==="I"||x.s==="E") return; const Pt=_promoTokens(x.n); if(!Pt.length) return; const S=new Set(Pt); let inter=0; I.forEach(w=>{ if(S.has(w)||[...S].some(y=>y.length>=4&&w.length>=4&&(y.startsWith(w)||w.startsWith(y)))) inter++; });
+    const ehVol=w=>/^\d+(ml|l|g|kg)$/.test(w); let interTexto=0; I.forEach(w=>{ if(ehVol(w)) return; if(S.has(w)||[...S].some(y=>y.length>=4&&w.length>=4&&(y.startsWith(w)||w.startsWith(y)))) interTexto++; }); if(interTexto<1) return; // só o tamanho em comum não basta
+    const uniao=new Set([...I,...Pt]).size; let sc=inter/uniao; if(vol){ if(S.has(vol)) sc+=0.25; else if(Pt.some(w=>/^\d+(ml|l|g|kg)$/.test(w))) sc-=0.25; } if(I[0]&&S.has(I[0])) sc+=0.1; if(inter<1) return;
+    out.push({produtoId:id,nome:x.n,codigo:x.c||"",precoVarejo:Number(x.p)||null,custo:Number(x.pc)||null,score:+sc.toFixed(3)}); });
+  return out.sort((a,b)=>b.score-a.score).slice(0,max||4).filter(c=>c.score>=0.25); }
+const _permPromo=requireAcesso("acesso_tabela_varejo");
+function _promoVista(p,hoje){ return {...p,status:_statusPromocao(p,hoje),qtdProdutos:(p.itens||[]).length}; }
+app.get("/api/promocoes",_permPromo,(req,res)=>{ try{ const hoje=_promoHojeBR(), ordem={ativa:0,agendada:1,encerrada:2,cancelada:3};
+  const L=lerPromocoes().lista.map(p=>_promoVista(p,hoje)).sort((a,b)=>ordem[a.status]-ordem[b.status]||String(b.inicio).localeCompare(String(a.inicio)));
+  res.json({ok:true,hoje,promocoes:L}); }catch(e){ res.status(500).json({erro:e.message}); } });
+app.get("/api/promocoes/ativas",(req,res)=>{ try{ res.json({ok:true,hoje:_promoHojeBR(),produtos:_mapaPromoAtivo()}); }catch(e){ res.status(500).json({erro:e.message}); } });
+app.get("/api/promocoes/produtos",_permPromo,(req,res)=>{ try{ const q=_promoNrm(req.query.q||""); if(q.length<2) return res.json({ok:true,produtos:[]}); const toks=q.split(" ").filter(Boolean), P=lerProdutosBling().porId, idx=_indicePrecosTabela(), out=[];
+  for(const [id,x] of Object.entries(P)){ if(!x||!x.n||x.s==="I"||x.s==="E") continue; const alvo=_promoNrm(x.n+" "+(x.c||"")); if(!toks.every(t=>alvo.includes(t))) continue; const vinc=idx.porCodigo[String(x.c||"")]||idx.porNome[String(x.n||"").toLowerCase().trim()]||null;
+    out.push({produtoId:id,nome:x.n,codigo:x.c||"",precoVarejo:Number(x.p)||null,precoAtacado:vinc&&vinc.precoAtacado>0?Number(vinc.precoAtacado):null,custo:Number(x.pc)||null,estoque:x.est!=null?Number(x.est):null}); if(out.length>=30) break; }
+  res.json({ok:true,produtos:out}); }catch(e){ res.status(500).json({erro:e.message}); } });
+app.post("/api/promocoes",_permPromo,(req,res)=>{ try{ const b=req.body||{}, D=lerPromocoes(), hoje=_promoHojeBR(), erro=t=>res.status(400).json({erro:t});
+  const nome=String(b.nome||"").trim().slice(0,80); if(nome.length<2) return erro("dê um nome para a promoção");
+  const inicio=/^\d{4}-\d{2}-\d{2}$/.test(String(b.inicio||""))?b.inicio:null; if(!inicio) return erro("informe o dia em que a promoção começa");
+  let fim=/^\d{4}-\d{2}-\d{2}$/.test(String(b.fim||""))?b.fim:null; const dias=Math.round(Number(b.dias)); if(b.dias!=null&&b.dias!==""&&!(dias>=1&&dias<=366)&&!fim) return erro("a quantidade de dias tem que ficar entre 1 e 366"); if(Number.isFinite(dias)&&dias>=1&&dias<=366&&!fim) fim=_promoSomaDias(inicio,dias-1);
+  if(!fim) return erro("informe por quantos dias vale (ou o último dia)"); if(fim<inicio) return erro("o último dia não pode ser antes do início");
+  const itens=[], vistos=new Set(); for(const i of (Array.isArray(b.itens)?b.itens:[])){ const id=String(i&&i.produtoId||"").trim(), preco=Number(String(i&&i.preco).replace(",",".")), aplica=["atacado","varejo","ambos"].includes(i&&i.aplica)?i.aplica:null;
+    if(!id) continue; if(!(preco>0)) return erro(`informe o preço de "${i.nome||id}"`); if(!aplica) return erro(`escolha onde vale o preço de "${i.nome||id}" (atacado, varejo ou os dois)`);
+    for(const m of (aplica==="ambos"?["atacado","varejo"]:[aplica])){ const k=id+"|"+m; if(vistos.has(k)) return erro(`"${i.nome||id}" aparece duas vezes para ${m}`); vistos.add(k); }
+    itens.push({produtoId:id,nome:String(i.nome||"").slice(0,120),codigo:String(i.codigo||"").slice(0,40),preco:+preco.toFixed(2),aplica}); }
+  if(!itens.length) return erro("coloque ao menos um produto com preço");
+  // avisos (não bloqueiam): outra promoção no mesmo período com o mesmo produto, preço acima do normal ou abaixo do custo
+  const avisos=[], P=lerProdutosBling().porId, idx=_indicePrecosTabela();
+  D.lista.filter(p=>p.id!==b.id&&!p.cancelada&&!(fim<p.inicio||inicio>p.fim)).forEach(p=>(p.itens||[]).forEach(o=>{ const x=itens.find(i=>i.produtoId===o.produtoId&&(i.aplica==="ambos"||o.aplica==="ambos"||i.aplica===o.aplica)); if(x) avisos.push(`"${x.nome}" também está na promoção "${p.nome}" (${p.inicio.split("-").reverse().join("/")} a ${p.fim.split("-").reverse().join("/")}); vale a mais recente.`); }));
+  itens.forEach(i=>{ const pr=P[i.produtoId]||{}, vinc=idx.porCodigo[String(pr.c||"")]||idx.porNome[String(pr.n||"").toLowerCase().trim()]||null, custo=Number(pr.pc)||0;
+    if(custo>0&&i.preco<custo) avisos.push(`"${i.nome}": o preço ${i.preco.toFixed(2)} está ABAIXO do custo (${custo.toFixed(2)}).`);
+    const ref=(i.aplica==="atacado"?(vinc&&vinc.precoAtacado>0?Number(vinc.precoAtacado):null):(Number(pr.p)||null)); if(ref&&i.preco>=ref) avisos.push(`"${i.nome}": o preço da promoção (${i.preco.toFixed(2)}) não é menor que o preço atual (${ref.toFixed(2)}).`); });
+  const quem=req.sessao?.nome||"", agora=Date.now(); let p=b.id?D.lista.find(x=>x.id===b.id):null;
+  if(b.id&&!p) return res.status(404).json({erro:"promoção não encontrada"});
+  if(p){ if(p.cancelada) return erro("esta promoção foi cancelada; duplique para criar outra"); Object.assign(p,{nome,inicio,fim,itens,obs:String(b.obs||"").slice(0,300),atualizadoEm:agora}); (p.historico||=[]).push({em:agora,por:quem,acao:"editada"}); }
+  else{ D.seq++; p={id:"pr"+Date.now().toString(36)+D.seq,nome,inicio,fim,itens,obs:String(b.obs||"").slice(0,300),origem:b.origem==="encarte"?"encarte":"manual",criadoEm:agora,criadoPor:quem,historico:[{em:agora,por:quem,acao:"criada"}]}; D.lista.push(p); }
+  salvarJSON(PROMOCOES_FILE,D); _promoInvalida(); res.json({ok:true,promocao:_promoVista(p,hoje),avisos}); }catch(e){ res.status(500).json({erro:e.message}); } });
+app.post("/api/promocoes/:id/cancelar",_permPromo,(req,res)=>{ try{ const D=lerPromocoes(), p=D.lista.find(x=>x.id===req.params.id); if(!p) return res.status(404).json({erro:"promoção não encontrada"}); p.cancelada=true; p.canceladaEm=Date.now(); p.canceladaPor=req.sessao?.nome||""; (p.historico||=[]).push({em:Date.now(),por:p.canceladaPor,acao:"cancelada"}); salvarJSON(PROMOCOES_FILE,D); _promoInvalida(); res.json({ok:true}); }catch(e){ res.status(500).json({erro:e.message}); } });
+app.delete("/api/promocoes/:id",_permPromo,(req,res)=>{ try{ const D=lerPromocoes(), p=D.lista.find(x=>x.id===req.params.id); if(!p) return res.status(404).json({erro:"promoção não encontrada"}); const st=_statusPromocao(p); if(st==="ativa"||st==="encerrada") return res.status(409).json({erro:"promoção ativa ou já encerrada fica no histórico; cancele em vez de excluir"}); D.lista=D.lista.filter(x=>x.id!==p.id); salvarJSON(PROMOCOES_FILE,D); _promoInvalida(); res.json({ok:true}); }catch(e){ res.status(500).json({erro:e.message}); } });
+// LEITURA DO ENCARTE POR IA: foto(s) do encarte -> produtos e preços lidos, com os produtos do cadastro mais parecidos para você confirmar
+const _iaEncarteUso={};
+app.post("/api/promocoes/encarte",_permPromo,async(req,res)=>{
+  try{ const KEY=process.env.ANTHROPIC_API_KEY; if(!KEY) return res.status(503).json({erro:"A leitura por IA não está ligada (falta ANTHROPIC_API_KEY no Railway)."});
+    const quem=req.sessao?.id||"x", agora=Date.now(); _iaEncarteUso[quem]=(_iaEncarteUso[quem]||[]).filter(t=>agora-t<3600e3); if(_iaEncarteUso[quem].length>=20) return res.status(429).json({erro:"Limite de 20 leituras de encarte por hora."});
+    const imgs=(Array.isArray(req.body?.imagens)?req.body.imagens:[]).slice(0,4).map(x=>{ const m=/^data:(image\/\w+);base64,/.exec(String(x||"")); return {tipo:m?m[1]:"image/jpeg",dados:String(x||"").replace(/^data:image\/\w+;base64,/,"")}; }).filter(x=>x.dados.length>200&&x.dados.length<4.2e6);
+    if(!imgs.length) return res.status(400).json({erro:"envie a foto do encarte"});
+    const hoje=_promoHojeBR(), texto=`Esta é a foto de um encarte (tabloide) de promoção de uma distribuidora de bebidas. Hoje é ${hoje.split("-").reverse().join("/")}.
+Leia TODOS os produtos com preço. Para cada um informe: descricao (marca, sabor/tipo, tamanho e embalagem como aparece, ex. "Skol Pilsen lata 350ml"), preco (o número impresso, ponto como decimal), tipoPreco (o que o preço representa: "unidade", "fardo", "caixa" ou "pack"), qtdNaEmbalagem (quantas unidades tem o fardo/caixa/pack se estiver escrito, senão null), condicao (texto como "a partir de 3 fardos", "limite 6 por cliente", ou ""), sugestaoAplica ("atacado" se for fardo/caixa/quantidade mínima/preço para revenda, "varejo" se for preço de balcão por unidade, "ambos" se não der para saber) e confianca ("alta", "media" ou "baixa"; use baixa se o texto estiver cortado, borrado ou ambíguo).
+Se o encarte trouxer a validade (ex. "de 01/11 a 07/11" ou "válido até 10/11"), devolva em validade as datas no formato AAAA-MM-DD (use o ano de hoje se faltar) e o texto original; senão deixe vazio. Sugira um nomeSugerido curto para a promoção.
+Não invente produto nem preço. Não leia preços riscados ("de R$") como preço da promoção; use o preço "por". Responda SOMENTE com JSON, sem texto antes ou depois: {"nomeSugerido":"","validade":{"inicio":"","fim":"","texto":""},"itens":[{"descricao":"","preco":0,"tipoPreco":"unidade","qtdNaEmbalagem":null,"condicao":"","sugestaoAplica":"ambos","confianca":"media"}],"observacao":""}`;
+    const r=await fetch((process.env.ANTHROPIC_BASE_URL||"https://api.anthropic.com")+"/v1/messages",{method:"POST",headers:{"content-type":"application/json","x-api-key":KEY,"anthropic-version":"2023-06-01"},
+      body:JSON.stringify({model:process.env.ANTHROPIC_MODEL||"claude-sonnet-5-5",max_tokens:4000,messages:[{role:"user",content:[...imgs.map(d=>({type:"image",source:{type:"base64",media_type:d.tipo,data:d.dados}})),{type:"text",text:texto}]}]})});
+    const j=await r.json().catch(()=>({})); if(!r.ok) return res.status(502).json({erro:"A leitura falhou: "+(j?.error?.message||("HTTP "+r.status))});
+    _iaEncarteUso[quem].push(agora);
+    const txt=(j.content||[]).filter(c=>c.type==="text").map(c=>c.text).join("").replace(/```json|```/g,"").trim(); let o; try{ o=JSON.parse(txt.slice(txt.indexOf("{"),txt.lastIndexOf("}")+1)); }catch(e){ return res.status(502).json({erro:"Não consegui entender a resposta da leitura. Tente de novo com uma foto mais nítida."}); }
+    const dia=x=>/^\d{4}-\d{2}-\d{2}$/.test(String(x||""))?x:"";
+    const itens=(Array.isArray(o.itens)?o.itens:[]).filter(x=>x&&x.descricao&&Number(x.preco)>0).slice(0,150).map(x=>{ const preco=+Number(x.preco).toFixed(2), tipo=["unidade","fardo","caixa","pack"].includes(x.tipoPreco)?x.tipoPreco:"unidade", qtd=Number(x.qtdNaEmbalagem)>1?Math.round(Number(x.qtdNaEmbalagem)):null;
+      const unit=(tipo!=="unidade"&&qtd)?+(preco/qtd).toFixed(2):preco, cands=_promoCandidatos(String(x.descricao),4);
+      return {descricao:String(x.descricao).slice(0,140),precoLido:preco,tipoPreco:tipo,qtdNaEmbalagem:qtd,precoUnitario:unit,convertido:unit!==preco,condicao:String(x.condicao||"").slice(0,120),sugestaoAplica:["atacado","varejo","ambos"].includes(x.sugestaoAplica)?x.sugestaoAplica:"ambos",confianca:["alta","media","baixa"].includes(x.confianca)?x.confianca:"media",candidatos:cands,melhor:cands[0]&&cands[0].score>=0.45?cands[0].produtoId:null}; });
+    res.json({ok:true,nomeSugerido:String(o.nomeSugerido||"").slice(0,80),validade:{inicio:dia(o.validade&&o.validade.inicio),fim:dia(o.validade&&o.validade.fim),texto:String(o.validade&&o.validade.texto||"").slice(0,120)},itens,observacao:String(o.observacao||"").slice(0,300),imagens:imgs.length});
+  }catch(e){ res.status(500).json({erro:e.message}); } });
+app.get("/promocoes",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"promocoes.html")); });
 // ===================== CONTAS BANCÁRIAS: SALDO E MOVIMENTAÇÃO =====================
 // Saída = conta paga com aquele banco/cartão. Entrada = Pix de cliente recebido naquele banco (caixa, entrega e ficha). Estorno de cliente pelo banco = saída.
 // Além disso, lançamentos MANUAIS: entrada, saída (tarifa, rendimento, depósito...), transferência entre contas e ajuste de conferência. Dinheiro e cartão da maquininha NÃO entram sozinhos (o banco que recebe é outro e o valor vem líquido): lance à mão quando cair.
@@ -14581,13 +14672,14 @@ app.patch("/api/pedidos/:id/situacao", async (req, res) => {
 // Busca produtos com PREÇO DE ATACADO (da tabela publicada) + estoque ao vivo
 // PREÇO ATUAL de um produto para vender no atacado: o preço de atacado da tabela, se houver; senão o preço de varejo do Bling.
 // Com vivo:true confere no Bling na hora (e corrige o cadastro em cache e o preço confirmado, para as demais telas também ficarem certas).
-async function _precoAtualProduto(produtoId,opc){ const id=String(produtoId), vivo=!!(opc&&opc.vivo), P0=lerProdutosBling().porId[id]||{}, cod=String(P0.c||""), idx=_indicePrecosTabela();
+async function _precoAtualProduto(produtoId,opc){ const _pr=await _precoAtualProduto0(produtoId,opc); try{ const pm=_promoDoProduto(produtoId,(opc&&opc.modo)==="varejo"?"varejo":"atacado"); if(pm&&pm.preco>0&&(!(_pr.preco>0)||pm.preco<_pr.preco)){ _pr.precoNormal=_pr.preco; _pr.preco=pm.preco; _pr.promocao={nome:pm.nome,fim:pm.fim}; } }catch(e){} return _pr; }
+async function _precoAtualProduto0(produtoId,opc){ const id=String(produtoId), vivo=!!(opc&&opc.vivo), P0=lerProdutosBling().porId[id]||{}, cod=String(P0.c||""), idx=_indicePrecosTabela();
   const vinc=(cod&&idx.porCodigo[cod])||idx.porNome[String(P0.n||"").toLowerCase().trim()]||null, atac=vinc&&vinc.precoAtacado!=null&&Number(vinc.precoAtacado)>0?Number(vinc.precoAtacado):null; let pb=null, aoVivo=false, nome=P0.n||"";
   if(atac==null||vivo){ try{ if(vivo){ try{ _invalidarProduto(id); }catch(e){} } /* a leitura de produto tem cache curto: conferir "na hora" exige limpá-lo */ const r=await bling(`/produtos/${id}`), v=Number(r&&r.data&&r.data.preco)||0; if(v>0){ pb=v; aoVivo=true; nome=(r.data.nome||nome); const PP=lerProdutosBling(); if(PP.porId[id]&&Number(PP.porId[id].p)!==v){ PP.porId[id].p=v; salvarJSON(PRODUTOS_BLING_FILE,PP); } _precoConfirmado.set(id,{preco:v,nome,em:Date.now()}); } }catch(e){} }
   if(pb==null){ const c=_precoConfirmado.get(id); pb=(c&&Date.now()-c.em<PRECO_CONFIRMA_TTL&&c.preco>0)?c.preco:(Number(P0.p)>0?Number(P0.p):null); }
   return {produtoId:id,nome,preco:atac!=null?atac:(pb||0),origem:atac!=null?"atacado":"bling",precoAtacado:atac,precoBling:pb,aoVivo}; }
 // itens NOVOS de uma edição (a tela manda novo:true) são repreçados com o preço atual, para não entrarem com o valor antigo; devolve o que mudou
-async function _corrigirPrecosNovos(itens){ const mudou=[]; for(const i of (itens||[])){ if(!i||i.novo!==true||!i.produtoId) continue; try{ const r=await _precoAtualProduto(i.produtoId,{vivo:true}); if(r.preco>0&&Math.abs(r.preco-Number(i.valor))>0.004){ mudou.push({produtoId:i.produtoId,nome:i.nome||r.nome,de:Number(i.valor)||0,para:r.preco}); i.valor=r.preco; } }catch(e){} } return mudou; }
+async function _corrigirPrecosNovos(itens){ const mudou=[]; for(const i of (itens||[])){ if(!i||i.novo!==true||!i.produtoId) continue; try{ const r=await _precoAtualProduto(i.produtoId,{vivo:true,modo:i.modoPreco==="varejo"?"varejo":"atacado"}); if(r.preco>0&&Math.abs(r.preco-Number(i.valor))>0.004){ mudou.push({produtoId:i.produtoId,nome:i.nome||r.nome,de:Number(i.valor)||0,para:r.preco}); i.valor=r.preco; } }catch(e){} } return mudou; }
 app.get("/api/atacado/preco-produto",async(req,res)=>{ try{ const id=String(req.query.produtoId||"").replace(/\D/g,""); if(!id) return res.status(400).json({erro:"informe ?produtoId="}); res.json({ok:true,...(await _precoAtualProduto(id,{vivo:true}))}); }catch(e){ res.status(500).json({erro:e.message}); } });
 app.get("/api/buscar-atacado", async (req, res) => {
   try {
@@ -14634,6 +14726,7 @@ app.get("/api/buscar-atacado", async (req, res) => {
       p.origemPreco = (atacado != null) ? "atacado" : "bling";
       p.multiplo = vinc?.caixaQtd || 1; // de quantas em quantas unidades some
       p.precoFardo = vinc?.precoFardo ?? null;
+      _promoAplicaNoItem(p,p.id,{campos:"atacadoBling"}); // promoção ativa: o preço entra na hora de montar o pedido (pedido já criado não muda)
     });
     // ESTOQUE em lote (1 chamada, até 40 produtos) -- antes buscava individual,
     // um por produto (até 8 ao mesmo tempo), toda vez que alguém buscava. Isso é
@@ -19843,6 +19936,7 @@ app.get("/api/preco/gtin/:codigo", async(req,res)=>{
     const codigo=String(req.params.codigo||"").trim();
     if(!codigo) return res.status(400).json({erro:"informe o código"});
     const querAtacado = req.query.atacado==="1"||req.query.atacado==="true";
+    if(req.query.promo==="1"){ const rj=res.json.bind(res); res.json=(o)=>{ try{ if(o&&o.data&&(o.data.produtoId||o.data.id)) _promoAplicaNoItem(o.data,o.data.produtoId||o.data.id,{modo:querAtacado?"atacado":"varejo"}); }catch(e){} return rj(o); }; } // promoção só para as telas de venda
 
     // anexa precoAtacado/precoFardo/caixaQtd (SEM mexer no preço de varejo) — usado
     // pela tela /preco pra mostrar os três preços juntos, mesma fonte da /etiqueta

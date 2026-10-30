@@ -1440,7 +1440,7 @@ function ligarBusca() {
   });
 }
 async function buscarProduto(termo, el, resEl, ehEnter) {
-  const q = MODO_PRECO === "atacado" ? "?atacado=1" : ""; // varejo = preço do Bling
+  const q = MODO_PRECO === "atacado" ? "?atacado=1&promo=1" : "?promo=1"; // varejo = preço do Bling; promo=1: preço de promoção ativa (só entra em venda nova, pedido já criado mantém o valor)
   try {
     if (/^\d{4,}$/.test(termo)) {
       const r = await fetch(BACKEND + "/api/preco/gtin/" + encodeURIComponent(termo) + q).then(r => r.json()).catch(() => null);
@@ -1469,7 +1469,7 @@ async function buscarProduto(termo, el, resEl, ehEnter) {
       }
       resEl.innerHTML = "";
     }
-    const j = await fetch(BACKEND + "/api/buscar?nome=" + encodeURIComponent(termo)).then(r => r.json());
+    const j = await fetch(BACKEND + "/api/buscar?promo=1" + (MODO_PRECO === "atacado" ? "&atacado=1" : "") + "&nome=" + encodeURIComponent(termo)).then(r => r.json());
     const lista = (j.data || []).slice(0, 25);
     if (!lista.length) {
       resEl.innerHTML = '<div class="muted">nada encontrado</div>';
@@ -1490,7 +1490,7 @@ async function buscarProduto(termo, el, resEl, ehEnter) {
           p._preco = r.data.preco;
           p._origemPreco = r.data.origemPreco;
           const e = document.getElementById("pr_" + ix);
-          if (e) e.textContent = brl(r.data.preco);
+          if (e) { e.textContent = brl(r.data.preco); if (r.data.promocao) e.innerHTML = brl(r.data.preco) + '<span style="background:#ff0082;color:#fff;border-radius:5px;padding:1px 5px;font-size:10px;font-weight:800;margin-left:4px">🔥 PROMO</span>'; }
         }
       } catch (e) {}
     });

@@ -858,7 +858,7 @@ async function buscarProduto(termo, el, resEl, ehEnter) {
   const meuId = ++_buscaReqId; // resposta atrasada de uma busca antiga não sobrescreve a atual
   try {
     if (/^\d{6,}$/.test(termo)) {
-      const r = await fetch(BACKEND + "/api/preco/gtin/" + encodeURIComponent(termo)).then(r => r.json()).catch(() => null);
+      const r = await fetch(BACKEND + "/api/preco/gtin/" + encodeURIComponent(termo) + "?promo=1").then(r => r.json()).catch(() => null);
       if (r && r.data && r.data.preco > 0) {
         adicionarAoCarrinho({
           produtoId: r.data.produtoId,
@@ -877,7 +877,7 @@ async function buscarProduto(termo, el, resEl, ehEnter) {
         return;
       }
     }
-    const j = await fetch(BACKEND + "/api/buscar?nome=" + encodeURIComponent(termo)).then(r => r.json());
+    const j = await fetch(BACKEND + "/api/buscar?promo=1&nome=" + encodeURIComponent(termo)).then(r => r.json());
     if (meuId !== _buscaReqId) return; // já tem busca mais nova — ignora esta
     const lista = (j.data || []).slice(0, 25);
     if (!lista.length) {
@@ -896,14 +896,14 @@ async function buscarProduto(termo, el, resEl, ehEnter) {
       <div class="resitem" onclick="selecionarResultado(${ix})" id="rb_${ix}">
         ${p._imagem ? `<img src="${esc(p._imagem)}" onerror="this.outerHTML='<div class=&quot;semimg&quot;>📦</div>'">` : `<div class="semimg">📦</div>`}
         <div class="info"><div class="nome">${esc(p.nome)}</div><div class="meta">#${esc(String(p.codigo || ""))} · estoque ${(_p$estoque = p.estoque) !== null && _p$estoque !== void 0 ? _p$estoque : "?"}</div></div>
-        <div class="preco" id="pr_${ix}">${p._preco ? brl(p._preco) : "—"}</div>
+        <div class="preco" id="pr_${ix}">${p._preco ? brl(p._preco) : "—"}${p.promocao ? '<span style="background:#ff0082;color:#fff;border-radius:5px;padding:1px 5px;font-size:10px;font-weight:800;margin-left:4px">🔥 PROMO</span>' : ""}</div>
       </div>`;
     }).join("");
     // só pros que vieram SEM preço: confirma um a um (raro)
     lista.forEach(async (p, ix) => {
       if (!p.codigo || p._preco) return;
       try {
-        const r = await fetch(BACKEND + "/api/preco/gtin/" + encodeURIComponent(p.codigo)).then(r => r.json());
+        const r = await fetch(BACKEND + "/api/preco/gtin/" + encodeURIComponent(p.codigo) + "?promo=1").then(r => r.json());
         if (r !== null && r !== void 0 && r.data) {
           p._preco = r.data.preco;
           p._imagem = r.data.imagem;
@@ -928,7 +928,7 @@ async function selecionarResultado(ix) {
   if (p._preco == null && p.codigo) {
     if (cardEl) cardEl.style.opacity = ".5";
     try {
-      const r = await fetch(BACKEND + "/api/preco/gtin/" + encodeURIComponent(p.codigo)).then(r => r.json());
+      const r = await fetch(BACKEND + "/api/preco/gtin/" + encodeURIComponent(p.codigo) + "?promo=1").then(r => r.json());
       if (r !== null && r !== void 0 && r.data) {
         p._preco = r.data.preco;
         p._imagem = r.data.imagem;
