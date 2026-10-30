@@ -60,7 +60,7 @@
     var capa = m.tipo === "video"
       ? (m.thumb ? '<img src="' + esc(B + m.thumb) + '" loading="lazy" onerror="B13Ficha._semArquivo(this)">' : '<div style="height:110px;background:#000"></div>')
       : '<img src="' + esc(B + (m.thumb || m.url)) + '" loading="lazy" onerror="B13Ficha._semArquivo(this)">';
-    if (m.existe === false) capa = '<div style="height:110px;background:#1a1530;display:flex;align-items:center;justify-content:center;flex-direction:column;color:#ff8aa3;font-size:12px;text-align:center;padding:6px"><span style="font-size:24px">🗑</span>arquivo apagado</div>';
+    if (m.existe === false) capa = '<div style="height:110px;background:#1a1530;display:flex;align-items:center;justify-content:center;flex-direction:column;color:#ff8aa3;font-size:12px;text-align:center;padding:6px"><span style="font-size:24px">🗑</span>arquivo apagado' + (m.apagadoEm ? '<span style="font-size:10px;color:#d9a3b8;margin-top:3px">em ' + quandoApagado(m.apagadoEm) + '</span>' : '') + '</div>';
     return '<div class="b13f-mid" onclick="B13Ficha.ver(' + i + ')">' + capa + (m.tipo === "video" && m.existe !== false ? '<span class="b13f-play">▶</span>' : "") +
       "<small>" + (m.tipo === "video" ? "🎥 " : "📷 ") + orig + " · " + hora(m.em) + " · " + esc(m.por) + "</small></div>";
   }
@@ -73,8 +73,10 @@
     document.body.appendChild(el); return el;
   }
   // vídeo que não abre: descobre se o arquivo foi apagado (limpeza automática) ou se o aparelho não toca o formato, e explica
-  function msgSemArquivo(tipo) {
-    return '🗑 <b>Este ' + (tipo === "video" ? "vídeo" : "arquivo") + ' não existe mais no servidor.</b><br>O sistema apaga fotos e vídeos de conferência antigos e, quando o espaço do servidor aperta, os mais antigos primeiro. Não dá para recuperar.';
+  function quandoApagado(em) { try { return new Date(em).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }); } catch (e) { return ""; } }
+  function msgSemArquivo(tipo, m) {
+    var motivo = m && m.apagadoEm ? '<br><b>Apagado em ' + quandoApagado(m.apagadoEm) + '</b> · ' + esc(m.motivoApagado || "limpeza automática") + (m.livrePctNaHora != null ? ' (volume com ' + m.livrePctNaHora + '% livre)' : "") + "." : "";
+    return '🗑 <b>Este ' + (tipo === "video" ? "vídeo" : "arquivo") + ' não existe mais no servidor.</b>' + motivo + '<br>O sistema apaga fotos e vídeos de conferência antigos e, quando o espaço do servidor aperta, os mais antigos primeiro. Não dá para recuperar.';
   }
   function erroVideo(v) {
     if (!v || !v.parentNode) return;
@@ -96,7 +98,7 @@
     el.innerHTML = '<div class="b13f-lb-top"><span>' + (LB_I + 1) + " de " + MID.length + " · " + (m.tipo === "video" ? "🎥" : "📷") + " " + hora(m.em) + (m.por ? " · " + esc(m.por) : "") + "</span>" +
       '<a class="b13f-btn" href="' + esc(url) + '" download target="_blank" rel="noopener">⬇ Baixar</a><button class="b13f-btn" onclick="B13Ficha.fecharLb()">✕ Fechar</button></div>' +
       '<div class="b13f-lb-palco">' + (MID.length > 1 ? '<button class="b13f-seta" style="left:8px" onclick="B13Ficha.ver(' + (LB_I - 1) + ')">‹</button>' : "") +
-      (m.existe === false ? '<div class="b13f-sem" style="padding:16px;border-radius:10px;background:#2a1020;border:1px solid #ff5f8a;color:#ffd0da;font-size:13px;line-height:1.45;max-width:440px;margin:auto">' + msgSemArquivo(m.tipo) + "</div>" : m.tipo === "video" ? '<video id="b13fVideo" src="' + esc(url) + '" controls autoplay playsinline></video>' : '<img src="' + esc(url) + '" onerror="B13Ficha._semArquivo(this)">') +
+      (m.existe === false ? '<div class="b13f-sem" style="padding:16px;border-radius:10px;background:#2a1020;border:1px solid #ff5f8a;color:#ffd0da;font-size:13px;line-height:1.45;max-width:440px;margin:auto">' + msgSemArquivo(m.tipo, m) + "</div>" : m.tipo === "video" ? '<video id="b13fVideo" src="' + esc(url) + '" controls autoplay playsinline></video>' : '<img src="' + esc(url) + '" onerror="B13Ficha._semArquivo(this)">') +
       (MID.length > 1 ? '<button class="b13f-seta" style="right:8px" onclick="B13Ficha.ver(' + (LB_I + 1) + ')">›</button>' : "") + "</div>";
     el.classList.add("aberto");
     if (m.tipo === "video" && m.existe !== false) {

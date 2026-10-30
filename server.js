@@ -926,6 +926,13 @@ const COMPROVANTES_DIR = `${DATA_DIR}/comprovantes`;
 // espaço (se passar do limite, apaga do mais antigo até caber). Configurável por env.
 const COMPROV_DIAS_MANTER = Number(process.env.COMPROV_DIAS_MANTER || 60);      // guarda 60 dias
 const COMPROV_LIMITE_MB  = Number(process.env.COMPROV_LIMITE_MB  || 2048);      // teto 2 GB
+// A faxina NUNCA apaga foto/vídeo enviado nas últimas COMPROV_PROTEGER_HORAS (antes, com o volume abaixo da meta de espaço livre, ela apagava até o vídeo que acabava de ser enviado e a ficha do pedido mostrava "arquivo apagado")
+const COMPROV_PROTEGER_HORAS = Number(process.env.COMPROV_PROTEGER_HORAS || 72);
+const COMPROV_APAGADOS_FILE = `${DATA_DIR}/comprovantes_apagados.jsonl`; // quem foi apagado, quando e por quê (a ficha explica o motivo)
+function _logApagado(nome,bytes,motivo){ try{ const d=_discoInfo(); fs.appendFileSync(COMPROV_APAGADOS_FILE,JSON.stringify({em:Date.now(),nome,bytes,motivo,livrePct:d?d.pctLivre:null})+"\n"); }catch(e){} }
+let _apagadosCache={mt:0,mapa:{}};
+function _infoApagado(url){ try{ const nome=String(url||"").split("?")[0].split("/").pop(); const st=fs.statSync(COMPROV_APAGADOS_FILE); if(st.mtimeMs!==_apagadosCache.mt){ const txt=fs.readFileSync(COMPROV_APAGADOS_FILE,"utf8").split("\n").slice(-6000); const M={}; txt.forEach(l=>{ try{ const o=JSON.parse(l); M[o.nome]=o; }catch(e){} }); _apagadosCache={mt:st.mtimeMs,mapa:M}; }
+    const o=_apagadosCache.mapa[nome]; return o?{apagadoEm:o.em,motivoApagado:o.motivo,livrePctNaHora:o.livrePct}:{}; }catch(e){ return {}; } }
 function _statComprovantes(){
   let arquivos=[], totalBytes=0;
   try{
@@ -954,22 +961,25 @@ function _apagarTemporarios(){
   return {n,bytes};
 }
 function _liberarComprovantes(alvoLivreBytes){
-  const info=_discoInfo(); if(!info) return {apagados:0,bytes:0};
-  let falta=alvoLivreBytes-info.livre; if(falta<=0) return {apagados:0,bytes:0};
-  let arqs=[]; try{ arqs=fs.readdirSync(COMPROVANTES_DIR).map(f=>{ const p=path.join(COMPROVANTES_DIR,f); try{ const st=fs.statSync(p); if(!st.isFile()) return null; return {p,f,size:st.size,mtime:st.mtimeMs,video:/\.(mp4|mov|webm|3gp|mkv|avi)$/i.test(f)?1:0}; }catch(e){ return null; } }).filter(Boolean); }catch(e){}
-  arqs.sort((a,b)=>(b.video-a.video)||(a.mtime-b.mtime)); // vídeos mais antigos primeiro, depois fotos mais antigas
-  let apagados=0,bytes=0;
-  for(const a of arqs){ if(falta<=0) break; try{ fs.unlinkSync(a.p); try{ fs.unlinkSync(path.join(MINIATURAS_DIR,a.f+".jpg")); }catch(e){} apagados++; bytes+=a.size; falta-=a.size; }catch(e){} }
-  return {apagados,bytes};
+  const info=_discoInfo(); if(!info) return {apagados:0,bytes:0,protegidos:0,faltou:0};
+  let falta=alvoLivreBytes-info.livre; if(falta<=0) return {apagados:0,bytes:0,protegidos:0,faltou:0};
+  const agora=Date.now(), prot=COMPROV_PROTEGER_HORAS*3600e3; let arqs=[]; try{ arqs=fs.readdirSync(COMPROVANTES_DIR).map(f=>{ const p=path.join(COMPROVANTES_DIR,f); try{ const st=fs.statSync(p); if(!st.isFile()) return null; return {p,f,size:st.size,mtime:st.mtimeMs,video:/\.(mp4|mov|webm|3gp|mkv|avi)$/i.test(f)?1:0,recente:agora-st.mtimeMs<prot}; }catch(e){ return null; } }).filter(Boolean); }catch(e){}
+  const ordem=(a,b)=>(b.video-a.video)||(a.mtime-b.mtime); // vídeos mais antigos primeiro, depois fotos mais antigas
+  let apagados=0,bytes=0; const apaga=(a,motivo)=>{ try{ fs.unlinkSync(a.p); try{ fs.unlinkSync(path.join(MINIATURAS_DIR,a.f+".jpg")); }catch(e){} _logApagado(a.f,a.size,motivo); apagados++; bytes+=a.size; falta-=a.size; }catch(e){} };
+  for(const a of arqs.filter(x=>!x.recente).sort(ordem)){ if(falta<=0) break; apaga(a,`limpeza de disco (volume com ${info.pctLivre}% livre, meta ${Math.round(alvoLivreBytes/info.total*100)}%)`); }
+  // só em emergência de verdade (menos de 80 MB livres: o caixa pararia de gravar) mexe nos recentes, e nunca nos dos últimos 30 minutos
+  if(falta>0&&_discoInfo().livre<80*1048576) for(const a of arqs.filter(x=>x.recente&&agora-x.mtime>30*60000).sort((x,y)=>x.mtime-y.mtime)){ if(_discoInfo().livre>=80*1048576) break; apaga(a,"disco quase sem espaço (emergência)"); }
+  return {apagados,bytes,protegidos:arqs.filter(x=>x.recente).length,faltou:Math.max(0,falta)};
 }
 // AVISO DE DISCO (tela de Avisos): atenção abaixo de 30% livre e crítico abaixo de 15%, medido ANTES da faxina
 // (é o que mostra a pressão real). No máximo 1 aviso de cada nível por dia (fingerprint por nível + dia).
+const DISCO_ALVO_LIVRE_PCT=Number(process.env.DISCO_ALVO_LIVRE_PCT||15); // meta da faxina (antes 25%, o que apagava tudo em volume pequeno)
 const DISCO_ALERTA_ATENCAO=Number(process.env.DISCO_ALERTA_ATENCAO||30), DISCO_ALERTA_CRITICO=Number(process.env.DISCO_ALERTA_CRITICO||15);
-function _alertaDisco(antes,depois,liberadoMB){
+function _alertaDisco(antes,depois,liberadoMB,comp){
   if(!antes||!antes.total) return;
   const pct=antes.pctLivre; const nivel=pct<DISCO_ALERTA_CRITICO?"critico":pct<DISCO_ALERTA_ATENCAO?"atencao":null; if(!nivel) return;
   const dia=new Date(Date.now()-3*3600e3).toISOString().slice(0,10); const MB=b=>Math.round(b/1048576);
-  const limpou=(liberadoMB||0)>0.5?` A limpeza automática liberou ${liberadoMB} MB apagando fotos e vídeos de conferência mais antigos; agora estão livres ${depois?MB(depois.livre)+" MB ("+depois.pctLivre+"%)":"?"}.`:"";
+  const limpou=((liberadoMB||0)>0.5?` A limpeza automática liberou ${liberadoMB} MB apagando fotos e vídeos de conferência com mais de ${Math.round(COMPROV_PROTEGER_HORAS/24)} dias; agora estão livres ${depois?MB(depois.livre)+" MB ("+depois.pctLivre+"%)":"?"}.`:"")+((comp&&comp.faltou>0)?` A limpeza NÃO chegou à meta de ${DISCO_ALVO_LIVRE_PCT}% livres porque o que mais ocupa o volume não são fotos e vídeos antigos; os ${comp.protegidos||0} arquivos dos últimos ${Math.round(COMPROV_PROTEGER_HORAS/24)} dias foram mantidos de propósito.`:"");
   registrarAviso({ tipo:nivel==="critico"?"disco_critico":"disco_atencao", origem:"Servidor", fingerprint:`disco-${nivel}-${dia}`,
     titulo:nivel==="critico"?`🚨 Disco do servidor quase cheio: só ${pct}% livre (${MB(antes.livre)} MB de ${MB(antes.total)} MB)`:`⚠️ Espaço em disco do servidor baixo: ${pct}% livre (${MB(antes.livre)} MB de ${MB(antes.total)} MB)`,
     oQueFazer:(nivel==="critico"?"Risco de os caixas pararem de gravar.":"Ainda não afeta os caixas.")+limpou+
@@ -981,10 +991,10 @@ function faxinaDisco(motivo,urgente){
   const antes=_discoInfo(); const tmp=_apagarTemporarios(); let comp={apagados:0,bytes:0};
   try{ limparComprovantesAntigos(); }catch(e){}
   const meio=_discoInfo();
-  if(meio){ const alvo=Math.max(meio.total*0.25,300*1048576); if(meio.livre<alvo) comp=_liberarComprovantes(Math.min(alvo,meio.total*0.5)); }
+  if(meio){ const alvo=Math.max(meio.total*DISCO_ALVO_LIVRE_PCT/100,300*1048576); if(meio.livre<alvo) comp=_liberarComprovantes(Math.min(alvo,meio.total*0.5)); }
   const depois=_discoInfo();
   const liberadoMB=antes&&depois?+((depois.livre-antes.livre)/1048576).toFixed(1):null;
-  try{ _alertaDisco(antes,depois,liberadoMB); }catch(e){}
+  try{ _alertaDisco(antes,depois,liberadoMB,comp); }catch(e){}
   if(tmp.n||comp.apagados||urgente||(liberadoMB||0)>0.5) console.warn(`[disco] faxina (${motivo}): ${liberadoMB} MB liberados (inclui fotos/vídeos antigos e temporários); livre agora ${depois?(depois.livre/1048576).toFixed(0)+" MB ("+depois.pctLivre+"%)":"?"}`);
   return {motivo,antes,depois,liberadoMB,temporarios:tmp,comprovantes:comp};
 }
@@ -997,7 +1007,7 @@ function limparComprovantesAntigos(){
     let apagados=0, bytesLiberados=0;
     // 1) por IDADE
     arquivos.forEach(a=>{
-      if(a.mtime<limite){ try{ fs.unlinkSync(`${COMPROVANTES_DIR}/${a.nome}`); apagados++; bytesLiberados+=a.bytes; a._del=true; }catch(e){} }
+      if(a.mtime<limite){ try{ fs.unlinkSync(`${COMPROVANTES_DIR}/${a.nome}`); _logApagado(a.nome,a.bytes,`mais de ${COMPROV_DIAS_MANTER} dias`); apagados++; bytesLiberados+=a.bytes; a._del=true; }catch(e){} }
     });
     // 2) por ESPAÇO: se ainda estiver acima do teto, apaga do mais antigo até caber
     const tetoBytes=_tetoComprovantesBytes();
@@ -1005,7 +1015,8 @@ function limparComprovantesAntigos(){
     if(restante.totalBytes>tetoBytes){
       for(const a of restante.arquivos){
         if(restante.totalBytes<=tetoBytes) break;
-        try{ fs.unlinkSync(`${COMPROVANTES_DIR}/${a.nome}`); apagados++; bytesLiberados+=a.bytes; restante.totalBytes-=a.bytes; }catch(e){}
+        if(Date.now()-a.mtime<COMPROV_PROTEGER_HORAS*3600e3) continue; // recente fica
+        try{ fs.unlinkSync(`${COMPROVANTES_DIR}/${a.nome}`); _logApagado(a.nome,a.bytes,"teto de espaço das fotos e vídeos"); apagados++; bytesLiberados+=a.bytes; restante.totalBytes-=a.bytes; }catch(e){}
       }
     }
     // 3) MINIATURAS órfãs (o arquivo original já foi apagado)
@@ -4522,9 +4533,20 @@ app.get("/api/saude/disco",requireSessao,(req,res)=>{
     const tam=(p)=>{ try{ const st=fs.statSync(p); if(st.isFile()) return st.size; return fs.readdirSync(p).reduce((s2,f)=>s2+tam(path.join(p,f)),0); }catch(e){ return 0; } };
     const itens=fs.readdirSync(DATA_DIR).map(f=>({nome:f,mb:MB(tam(path.join(DATA_DIR,f)))})).sort((a,b)=>b.mb-a.mb).slice(0,20);
     res.json({ok:true,disco:d?{totalMB:MB(d.total),livreMB:MB(d.livre),usadoMB:MB(d.usado),pctLivre:d.pctLivre}:null,
-      tetoComprovantesMB:MB(_tetoComprovantesBytes()),maioresItens:itens,faxina:fax});
+      tetoComprovantesMB:MB(_tetoComprovantesBytes()),maioresItens:itens,faxina:fax,
+      regraDaFaxina:{metaLivrePct:DISCO_ALVO_LIVRE_PCT,metaLivreMB:d?MB(Math.max(d.total*DISCO_ALVO_LIVRE_PCT/100,300*1048576)):null,protegeArquivosDosUltimosDias:COMPROV_PROTEGER_HORAS/24,roda:"a cada 30 min, ao subir o servidor e depois de cada envio de foto/vídeo"},
+      fotosEVideos:(()=>{ const st=_statComprovantes(); let v=0,f=0,bv=0,bf=0; st.arquivos.forEach(a=>{ if(/\.(mp4|mov|webm|3gp|mkv|avi)$/i.test(a.nome)){ v++; bv+=a.bytes; } else { f++; bf+=a.bytes; } }); return {videos:v,fotos:f,videosMB:MB(bv),fotosMB:MB(bf),maisAntigo:st.arquivos[0]?new Date(st.arquivos[0].mtime).toISOString().slice(0,10):null}; })(),
+      ultimosApagados:(()=>{ try{ return fs.readFileSync(COMPROV_APAGADOS_FILE,"utf8").trim().split("\n").slice(-15).reverse().map(l=>{ try{ const o=JSON.parse(l); return {quando:new Date(o.em-3*3600e3).toISOString().slice(0,16).replace("T"," "),arquivo:o.nome,MB:MB(o.bytes),motivo:o.motivo,livrePct:o.livrePct}; }catch(e){ return null; } }).filter(Boolean); }catch(e){ return []; } })()});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
+// DIAGNÓSTICO DAS MÍDIAS DE UM PEDIDO (pelo número): cada foto/vídeo registrado, se o arquivo existe, tamanho, e quando/por que foi apagado
+app.get("/api/diag/midias-pedido/:ref",requireAdmin,(req,res)=>{ try{ const ref=String(req.params.ref||"").replace(/\D/g,""); const r=_indicePedidos().lista.find(x=>String(x.numero)===ref||String(x.id)===ref); const id=r?String(r.id):ref, ev=(lerLog()[id]||[]).filter(e=>e.detalhes&&e.detalhes.url);
+  const dh=ms=>ms?new Date(Number(ms)-3*3600e3).toISOString().slice(0,19).replace("T"," "):"";
+  const midias=ev.map(e=>{ const nm=String(e.detalhes.url).split("/").pop(); let st=null; try{ st=fs.statSync(path.join(COMPROVANTES_DIR,nm)); }catch(x){} const ap=_infoApagado(e.detalhes.url);
+    return {evento:e.evento,enviadoEm:dh(e.em),por:e.funcionarioNome||"",arquivo:nm,tipo:e.detalhes.tipo||"",bytesRegistrados:e.detalhes.bytes||null,existe:!!st,bytesNoDisco:st?st.size:null,gravadoEm:st?dh(st.mtimeMs):null,...(ap.apagadoEm?{apagadoEm:dh(ap.apagadoEm),motivoApagado:ap.motivoApagado,livrePctNaHora:ap.livrePctNaHora}:{})}; });
+  const sem=midias.filter(m=>!m.existe), d=_discoInfo();
+  res.json({ok:true,pedido:{id,numero:r?r.numero:ref},disco:d?{livreMB:+(d.livre/1048576).toFixed(0),pctLivre:d.pctLivre}:null,midias,
+    leitura:[...(sem.length?[`${sem.length} de ${midias.length} arquivos NÃO estão mais no disco.`]:[]),...sem.filter(m=>m.apagadoEm).map(m=>`${m.arquivo}: apagado em ${m.apagadoEm} (${m.motivoApagado}${m.livrePctNaHora!=null?`, volume com ${m.livrePctNaHora}% livre`:""}).`),...sem.filter(m=>!m.apagadoEm).map(m=>`${m.arquivo}: sumiu sem registro de apagamento (apagado antes desta versão, ou o arquivo nunca chegou a ser gravado no volume).`),...(d&&d.pctLivre<DISCO_ALVO_LIVRE_PCT?[`O volume está com ${d.pctLivre}% livre, abaixo da meta de ${DISCO_ALVO_LIVRE_PCT}%: a limpeza vai apagar fotos e vídeos com mais de ${COMPROV_PROTEGER_HORAS/24} dias enquanto isso durar. Veja o que mais ocupa o volume em /api/saude/disco.`]:[])]}); }catch(e){ res.status(500).json({erro:e.message}); } });
 app.get("/api/comprovantes/uso",(req,res)=>{
   try{
     const {arquivos,totalBytes}=_statComprovantes();
@@ -17893,7 +17915,7 @@ app.get("/api/rotas/ocorrencias",(req,res)=>{
         if(!(e.ocorrencia||itensP.length||vp>0)) return;
         const p=ctx.props[pid]||null, t=ctx.turnos[pid]||{}, mv=(ctx.movCx||{})[pid]||null;
         const midias=[], vistas=new Set(), mini=ctx.mini;
-        const add=(url,tipo,em)=>{ if(!url||vistas.has(url)) return; vistas.add(url); const nm=String(url).split("/").pop(); midias.push({url,tipo:tipo||(/\.(mp4|mov|webm|3gp)$/i.test(url)?"video":"foto"),em:em||null,existe:_comprovanteExiste(url),thumb:mini.has(nm+".jpg")?`/comprovantes/miniaturas/${nm}.jpg`:null}); };
+        const add=(url,tipo,em)=>{ if(!url||vistas.has(url)) return; vistas.add(url); const nm=String(url).split("/").pop(); midias.push({url,tipo:tipo||(/\.(mp4|mov|webm|3gp)$/i.test(url)?"video":"foto"),em:em||null,existe:_comprovanteExiste(url),..._comprovanteExiste(url)===false?_infoApagado(url):{},thumb:mini.has(nm+".jpg")?`/comprovantes/miniaturas/${nm}.jpg`:null}); };
         ((e.ocorrencia&&e.ocorrencia.anexos)||[]).forEach(a=>add(a&&a.url,a&&a.tipo,e.em));
         if(e.ocorrencia&&e.ocorrencia.url) add(e.ocorrencia.url,e.ocorrencia.tipo,e.em);
         (ctx.log[pid]||[]).forEach(l=>{ const d=l.detalhes||{}; if(d.url&&/ocorr|entrega|motorista/i.test(l.evento||"")) add(d.url,d.tipo,l.em); });
@@ -17996,8 +18018,8 @@ function _montarFicha(it,ctx){
     (log[pid]||[]).forEach(e=>{ const d=e.detalhes||{}; if(!d.url||vistas.has(d.url)) return; vistas.add(d.url);
       const nm=String(d.url).split("/").pop();
       midias.push({url:d.url,tipo:d.tipo||(/\.(mp4|mov|webm|3gp)$/i.test(d.url)?"video":"foto"),origem:/ocorr|entrega|motorista/i.test(e.evento||"")?"entrega":/confer/i.test(e.evento||"")?"conferencia":"outro",
-        em:e.em||null,por:e.funcionarioNome||"",existe:_comprovanteExiste(d.url),thumb:mini.has(nm+".jpg")?`/comprovantes/miniaturas/${nm}.jpg`:null}); });
-    ((reg&&reg.ocorrencia&&reg.ocorrencia.anexos)||[]).forEach(a=>{ if(a&&a.url&&!vistas.has(a.url)){ vistas.add(a.url); midias.push({url:a.url,tipo:a.tipo||"foto",origem:"entrega",em:reg.em||null,por:it.viagem?.motorista||"",existe:_comprovanteExiste(a.url),thumb:null}); } });
+        em:e.em||null,por:e.funcionarioNome||"",existe:_comprovanteExiste(d.url),..._comprovanteExiste(d.url)===false?_infoApagado(d.url):{},thumb:mini.has(nm+".jpg")?`/comprovantes/miniaturas/${nm}.jpg`:null}); });
+    ((reg&&reg.ocorrencia&&reg.ocorrencia.anexos)||[]).forEach(a=>{ if(a&&a.url&&!vistas.has(a.url)){ vistas.add(a.url); midias.push({url:a.url,tipo:a.tipo||"foto",origem:"entrega",em:reg.em||null,por:it.viagem?.motorista||"",existe:_comprovanteExiste(a.url),..._comprovanteExiste(a.url)===false?_infoApagado(a.url):{},thumb:null}); } });
     const linha=(log[pid]||[]).filter(e=>!(e.detalhes&&e.detalhes.url)).map(e=>({em:e.em,texto:(typeof LOG_LABELS!=="undefined"&&LOG_LABELS[e.evento]&&LOG_LABELS[e.evento].txt)||_rotuloEvento(e.evento),por:e.funcionarioNome||""}));
     // separação e conferência (quem fez, quando, quanto tempo)
     const evs=log[pid]||[]; const ultimo=re=>{ for(let i=evs.length-1;i>=0;i--) if(re.test(evs[i].evento||"")) return evs[i]; return null; };
