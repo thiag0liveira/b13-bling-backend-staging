@@ -3663,7 +3663,7 @@ app.get("/api/tabela/imagem-info",(req,res)=>{
 });
 
 app.get("/api/tabela",(req,res)=>{
-  const t=lerTabela()||{model:[],meta:{}};
+  const t=(req.query.promo==="1"?lerTabelaPromo():lerTabela())||{model:[],meta:{}};
   const cfg=configEntrega();
   // "faixaExtra" segue sendo enviada (a primeira zona) pra telas antigas que ainda a leem
   res.json({...t, meta:{...(t.meta||{}), entrega:{...cfg, faixaExtra:cfg.zonas[0]?{kmMax:cfg.zonas[0].kmMax,faixas:cfg.zonas[0].faixas}:null}}});
@@ -3828,17 +3828,17 @@ function _fotoDoItemTabela(it,idx,porCod,porId){
 let _ofertasMemo={em:0,json:null};
 app.get("/api/ofertas/produtos",(req,res)=>{
   try{
-    if(!_ofertasMemo.json||Date.now()-_ofertasMemo.em>5*60000){
-      const idx=_gtinIndexMem(), tab=lerTabela(), lista=[];
+    if(!_ofertasMemo.json||Date.now()-_ofertasMemo.em>5*60000||_ofertasMemo.sig!==_promoAssinatura()){
+      const idx=_gtinIndexMem(), tab=lerTabelaPromo(), lista=[];
       const porCod={}, porId={}; Object.values(idx).forEach(v=>{ if(!v) return; if(v.codigo) porCod[String(v.codigo)]=v; if(v.produtoId) porId[String(v.produtoId)]=v; });
       let comPreco=0, semFoto=0;
       ((tab&&tab.model)||[]).forEach(c=>(c.itens||[]).forEach(it=>{
         if(it.desabilitado) return; const preco=Number(it.preco)||0; if(!(preco>0)) return; comPreco++;
         const b=_fotoDoItemTabela(it,idx,porCod,porId);
-        if(b) lista.push({nome:it.nome||b.nome||"",preco,imagem:b.imagem,categoria:c.t||"",un:Number(it.caixa)>1?Number(it.caixa):null}); else semFoto++;
+        if(b) lista.push({nome:it.nome||b.nome||"",preco,imagem:b.imagem,categoria:c.t||"",un:Number(it.caixa)>1?Number(it.caixa):null,...(it.promocao?{promocao:it.promocao,precoNormal:it.precoNormal??null}:{})}); else semFoto++;
       }));
       if(!lista.length&&comPreco>0) _fotosBootstrapLento(); // 1ª vez: busca as fotos pela fila lenta, em segundo plano
-      _ofertasMemo={em:lista.length?Date.now():Date.now()-4*60000,json:{versao:crypto.createHash("sha1").update(JSON.stringify(lista)).digest("hex").slice(0,16),produtos:lista,
+      _ofertasMemo={sig:_promoAssinatura(),em:lista.length?Date.now():Date.now()-4*60000,json:{versao:crypto.createHash("sha1").update(JSON.stringify(lista)).digest("hex").slice(0,16),produtos:lista,
         diag:{itensComPreco:comPreco,semFoto,buscandoFotos:_fotosBootRodando}}};
     }
     const j=_ofertasMemo.json;
@@ -3848,7 +3848,7 @@ app.get("/api/ofertas/produtos",(req,res)=>{
 });
 app.get("/api/catalogo",async(req,res)=>{
   try{
-    const tab=lerTabela();
+    const tab=lerTabelaPromo(); // o cliente vê o preço da promoção ativa
     if(!tab||!tab.model) return res.json({categorias:[],aviso:"Nenhuma tabela publicada ainda."});
     // TIMEOUT DE SEGURANÇA: getEstoqueMap() pode escanear até 40 páginas do catálogo
     // inteiro quando o cache de 5min vence -- se o Bling estiver lento/instável
@@ -3876,7 +3876,7 @@ app.get("/api/catalogo",async(req,res)=>{
         const imagem = (sabores.find(s=>s.imagem)||{}).imagem || "";
         // usa o id interno da tabela + primeiro código Bling como id único do produto
         const prodId = it.id + "_" + (sabores[0]?.codigo||"0");
-        cats[c.t].produtos.push({id:prodId,nome:it.nome,obs:it.obs||"",preco:it.preco,un:it.caixa||1,sabores,estoqueTotal,imagem});
+        cats[c.t].produtos.push({id:prodId,nome:it.nome,obs:it.obs||"",preco:it.preco,promocao:it.promocao||null,precoNormal:it.precoNormal??null,un:it.caixa||1,sabores,estoqueTotal,imagem});
       });
     });
     res.json({categorias:Object.values(cats).filter(c=>c.produtos&&c.produtos.length), meta:tab.meta||{}, atualizadoEm:tab.publicadoEm||null});
@@ -6295,9 +6295,10 @@ function indexarVinculosTabela(){
 // ---------------- PESQUISA DE PREÇO (pra responder cliente no WhatsApp) ----------------
 // Índice auxiliar: por CÓDIGO e por NOME do vínculo, o preço de atacado + fardo + caixa.
 // Usado pra enriquecer os produtos vindos do Bling com atacado/fardo quando existir.
-function _indicePrecosTabela(){
-  const tab=lerTabela();
-  const fardo=lerListaFardo();
+function _indicePrecosTabela(opc){
+  const comPromo=!!(opc&&opc.promo); // true nas telas de venda/exibição; false (padrão) em edição, análise e relatórios
+  const tab=comPromo?lerTabelaPromo():lerTabela();
+  const fardo=comPromo?lerListaFardoPromo():lerListaFardo();
   const porCodigo={}, porNome={};
   // o lista_fardo guarda o fardo como objeto {preco: X} (não número direto).
   // lê de forma robusta: pega .preco se for objeto, ou o número se vier direto.
@@ -6308,7 +6309,7 @@ function _indicePrecosTabela(){
     return (v!=null && Number(v)>0)?Number(v):null;
   };
   (tab?.model||[]).forEach(cat=>(cat.itens||[]).forEach(it=>{
-    const info={itemId:it.id, categoria:cat.t||"", itemNome:it.nome||"", precoAtacado:it.preco??null,
+    const info={itemId:it.id, categoria:cat.t||"", itemNome:it.nome||"", precoAtacado:it.preco??null, promocao:it.promocao||null, precoNormal:it.precoNormal??null,
       precoFardo: precoFardoDe(it.id), caixaQtd:it.caixa||null, desabilitado:!!it.desabilitado};
     (it.bling||[]).forEach(b=>{
       if(b.codigo) porCodigo[String(b.codigo)]=info;
@@ -6337,11 +6338,11 @@ app.get("/api/precos/buscar",async(req,res)=>{
   try{
     const q=(req.query.q||"").toString().slice(0,80).trim();
     const categoria=(req.query.categoria||"").toString().trim();
-    const idx=_indicePrecosTabela();
+    const idx=_indicePrecosTabela({promo:true});
 
     // Modo 1: filtro por categoria → usa os produtos da tabela de atacado dessa categoria
     if(categoria && !q){
-      const tab=lerTabela();
+      const tab=lerTabelaPromo();
       const cat=(tab?.model||[]).find(c=>c.t===categoria);
       if(!cat) return res.json({data:[]});
       // pega o preço do Bling do detalhe de cada produto da categoria (poucos por vez)
@@ -6353,9 +6354,10 @@ app.get("/api/precos/buscar",async(req,res)=>{
           try{ const d=await bling(`/produtos/${primeiroBling.id}`).then(r=>r?.data); precoBling=+(d?.preco||0)||null; }catch(e){}
           await new Promise(r=>setTimeout(r,120));
         }
+        const pvp=_precoVarejoPromo(primeiroBling?.id,primeiroBling?.nome||it.nome,primeiroBling?.codigo,precoBling);
         out.push({ nome:it.nome||"", categoria, precoAtacado:it.preco??null,
-          precoBling, precoFardo: idx.porCodigo[String(primeiroBling?.codigo)]?.precoFardo ?? null,
-          caixaQtd: it.caixa||null });
+          precoBling:pvp.preco, precoFardo: idx.porCodigo[String(primeiroBling?.codigo)]?.precoFardo ?? null,
+          caixaQtd: it.caixa||null, promocao:it.promocao||pvp.promocao||null });
       }
       return res.json({data:out});
     }
@@ -6375,11 +6377,12 @@ app.get("/api/precos/buscar",async(req,res)=>{
       }
       // cruza com atacado/fardo da tabela (por código, depois por nome)
       const info = idx.porCodigo[String(prod.codigo)] || idx.porNome[String(prod.nome||"").toLowerCase().trim()] || null;
+      const pvp=_precoVarejoPromo(prod.id,prod.nome,prod.codigo,precoBling);
       out.push({
         nome: prod.nome||"",
         categoria: info?.categoria || "",
         precoAtacado: info?.precoAtacado ?? null,
-        precoBling,
+        precoBling:pvp.preco, promocao:(info&&info.promocao)||pvp.promocao||null,
         precoFardo: info?.precoFardo ?? null,
         caixaQtd: info?.caixaQtd ?? null,
       });
@@ -7652,8 +7655,8 @@ app.get("/api/etiquetas",async(req,res)=>{
   const rapido=req.query.rapido==="1";
   const ids=String(req.query.itens||"").split(",").map(s=>s.trim()).filter(Boolean);
   if(!ids.length) return res.status(400).json({erro:"informe ?itens=id1,id2,..."});
-  const tab=lerTabela();
-  const fardo=lerListaFardo();
+  const tab=lerTabelaPromo();   // etiqueta mostra o preço que vale HOJE (promoção ativa inclusive)
+  const fardo=lerListaFardoPromo();
   const itensPorId={};
   (tab?.model||[]).forEach(cat=>(cat.itens||[]).forEach(it=>{ itensPorId[it.id]={...it,categoriaNome:cat.t||""}; }));
 
@@ -7685,6 +7688,7 @@ app.get("/api/etiquetas",async(req,res)=>{
     // fonte dos preços de atacado/fardo: o próprio item da tabela, ou o item vinculado
     // encontrado pelo produtoId (quando o avulso já existe na tabela)
     const fonteAtacado = it || itVinculado;
+    let promoVarejo=null; { const pvp=_precoVarejoPromo(produtoIdParaBusca,nomeCompleto||(it&&it.nome)||(avulso&&avulso.nome),null,precoVarejo); if(pvp.promocao){ promoVarejo=pvp; precoVarejo=pvp.preco; } }
     // preço de fardo: procura pela chave normal (id) e também pela chave do item vinculado
     const precoFardo = (fardo[id]?.preco ?? (itVinculado ? fardo[itVinculado.id]?.preco : null)) ?? null;
 
@@ -7696,6 +7700,7 @@ app.get("/api/etiquetas",async(req,res)=>{
       precoFardo,
       caixaQtd: fonteAtacado?(fonteAtacado.caixa||null):null,
       precoVarejo,
+      promocao:(fonteAtacado&&fonteAtacado.promocao)||(promoVarejo&&promoVarejo.promocao)||null, precoAtacadoNormal:fonteAtacado?(fonteAtacado.precoNormal??null):null, precoVarejoNormal:promoVarejo?promoVarejo.normal:null,
       produtoId:produtoIdParaBusca||null, nomeCompleto, imagem, // usados no modelo Varal A4
     });
   }
@@ -13543,7 +13548,7 @@ function _promoAplicaNoItem(p,idProd,opc){ try{ const ref={codigo:p.codigo,nome:
     if(opc&&opc.campos==="atacadoBling"){ // /api/buscar-atacado: precoAtacado, precoBling e preco
       if(pa){ p.precoAtacadoOriginal=p.precoAtacado??null; p.precoAtacado=pa.preco; p.preco=pa.preco; if(p.precoFardo!=null&&pa.preco<Number(p.precoFardo)){ p.precoFardoOriginal=p.precoFardo; p.precoFardo=pa.preco; } } // o botão "+ Fardo" também leva o preço da promoção quando ele é menor que o de fardo da tabela
       if(pv){ p.precoBlingOriginal=p.precoBling??null; p.precoBling=pv.preco; if(!pa&&!(p.precoAtacado>0)){ p.preco=pv.preco; } } }
-    else { const alvo=(opc&&opc.modo==="atacado")?pa:pv; if(alvo){ p.precoOriginal=p.preco??null; p.preco=alvo.preco; if(opc&&opc.modo==="atacado"){ p.precoAtacadoOriginal=p.precoAtacado??null; p.precoAtacado=alvo.preco; } } else delete p.promocao; }
+    else { const alvo=(opc&&opc.modo==="atacado")?pa:pv; if(alvo){ p.precoOriginal=p.preco??null; p.preco=alvo.preco; if(opc&&opc.modo==="atacado"){ p.precoAtacadoOriginal=p.precoAtacado??null; p.precoAtacado=alvo.preco; if(p.precoFardo!=null&&alvo.preco<Number(p.precoFardo)){ p.precoFardoOriginal=p.precoFardo; p.precoFardo=alvo.preco; } } } else delete p.promocao; }
   }catch(e){} return p; }
 const _promoNrm=x=>String(x||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9,.\s]/g," ").replace(/\s+/g," ").trim();
 function _promoTokens(t){ const stop=new Set(["de","da","do","das","dos","c","com","un","und","unid","cx","pct","kit","lt","ln","pet","vd","e","o","a"]); const T=[]; _promoNrm(t).replace(/(\d+)[,.](\d+)\s*(l|ml)\b/g,"$1$2$3").replace(/(\d+)\s*(ml|l|lt|g|kg)\b/g,"$1$2").split(" ").forEach(w=>{ w=w.replace(/lt$/,"l"); if(w&&!stop.has(w)) T.push(w); }); return T; }
@@ -13554,6 +13559,16 @@ function _promoCandidatos(descricao,max){ const I=_promoTokens(descricao); if(!I
     out.push({produtoId:id,nome:x.n,codigo:x.c||"",precoVarejo:Number(x.p)||null,custo:Number(x.pc)||null,score:+sc.toFixed(3)}); });
   return out.sort((a,b)=>b.score-a.score).slice(0,max||4).filter(c=>c.score>=0.25); }
 const _permPromo=requireAcesso("acesso_tabela_varejo");
+// PROMOÇÃO NA TABELA: o preço de atacado da tabela e o preço de atacado das vendas são a mesma coisa; onde a tabela é USADA para vender ou mostrar (tabela em imagem, consulta de preços,
+// etiquetas, TV, catálogo, buscas de venda) vale o preço da promoção ativa. Editor da tabela, análise de preços e relatórios continuam com o preço base (lerTabela() puro).
+function _promoItemTabela(it,modo){ if(!it) return null; for(const b of (it.bling||[])){ const p=_promoDoProduto(b.id!=null?b.id:"",modo||"atacado",{codigo:b.codigo,nome:b.nome}); if(p) return p; } return it.nome?_promoDoProduto("",modo||"atacado",{codigo:"",nome:it.nome}):null; }
+function lerTabelaPromo(){ const t=lerTabela(); if(!t||!Array.isArray(t.model)||!Object.keys(_mapaPromoAtivo()).length) return t;
+  return {...t,model:t.model.map(cat=>({...cat,itens:(cat.itens||[]).map(it=>{ const p=_promoItemTabela(it,"atacado"); return p&&p.preco>0?{...it,preco:p.preco,precoNormal:it.preco??null,promocao:{nome:p.nome,fim:p.fim}}:it; })}))}; }
+function lerListaFardoPromo(){ const f=lerListaFardo(), t=lerTabela(); if(!t||!Array.isArray(t.model)||!Object.keys(_mapaPromoAtivo()).length) return f; const out={...f};
+  t.model.forEach(cat=>(cat.itens||[]).forEach(it=>{ const p=_promoItemTabela(it,"atacado"); if(!p||!(p.preco>0)) return; const e=f[it.id], v=e==null?null:(typeof e==="object"?e.preco:e); if(v!=null&&Number(v)>0&&p.preco<Number(v)) out[it.id]=(typeof e==="object")?{...e,preco:p.preco,precoNormal:Number(v)}:p.preco; })); return out; } // fardo nunca sobe com a promoção
+const _promoAssinatura=()=>crypto.createHash("sha1").update(JSON.stringify(_mapaPromoAtivo())).digest("hex").slice(0,12); // muda quando uma promoção entra, sai ou muda de preço: renova memórias (ofertas, catálogo de preços)
+function _precoVarejoPromo(produtoId,nome,codigo,preco){ try{ const p=_promoDoProduto(produtoId,"varejo",{codigo,nome}); return p&&p.preco>0?{preco:p.preco,normal:preco,promocao:{nome:p.nome,fim:p.fim}}:{preco,normal:null,promocao:null}; }catch(e){ return {preco,normal:null,promocao:null}; } }
+
 // OUTROS SABORES de um produto: (1) variações do Bling (mesmo produto pai) e (2) produtos de nome parecido da mesma linha (mesma marca/linha), marcando como "mesmo tamanho" os de mesmo volume
 function _promoIrmaos(produtoId){
   const P=lerProdutosBling().porId, id0=String(produtoId), base=P[id0]; if(!base||!base.n) return {base:null,variacoes:[],parecidos:[]};
@@ -19976,7 +19991,11 @@ function _catalogoPreco(){
 }
 app.get("/api/preco/catalogo",(req,res)=>{
   try{
-    const c=_catalogoPreco();
+    const c0=_catalogoPreco(); let c=c0;
+    if(Object.keys(_mapaPromoAtivo()).length){ // promoção ativa por cima do catálogo (a memória base continua com o preço normal para as análises)
+      const itens=c0.itens.map(x=>{ const ref={codigo:"",nome:x.n}, pa=_promoDoProduto(x.id||"","atacado",ref), pv=_promoDoProduto(x.id||"","varejo",ref); if(!pa&&!pv) return x; const y={...x,promo:true};
+        if(pv&&pv.preco>0){ y.pNormal=x.p; y.p=pv.preco; } if(pa&&pa.preco>0){ y.aNormal=x.a; y.a=pa.preco; if(x.f!=null&&pa.preco<Number(x.f)){ y.fNormal=x.f; y.f=pa.preco; } } return y; });
+      c={versao:crypto.createHash("sha1").update(JSON.stringify(itens)).digest("hex").slice(0,16),itens,geradoEm:c0.geradoEm}; }
     // data da última vez que o catálogo inteiro foi refeito com o Bling (botão "Atualizar índice"), para a etiqueta de manutenção
     const info={indiceAtualizadoEm:_gtinMem.mtime>0?Math.round(_gtinMem.mtime):null,indiceCodigos:Object.keys(_gtinIndexMem()).length,servidorEm:Date.now()};
     if(req.query.versao&&req.query.versao===c.versao) return res.json({mesmo:true,versao:c.versao,...info});

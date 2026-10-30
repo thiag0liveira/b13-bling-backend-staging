@@ -1266,6 +1266,7 @@ function linhaPrecoProd(p, i) {
   if (p.precoAtacado != null) precos.push(`atacado ${brl(p.precoAtacado)}`);
   if (p.precoBling != null) precos.push(`bling ${brl(p.precoBling)}`);
   if (p.precoFardo != null) precos.push(`fardo ${brl(p.precoFardo)}${p.caixaQtd ? `/${p.caixaQtd}un` : ''}`);
+  if (p.promocao) precos.push('🔥 promoção');
   return `
     <div onclick="togglePrecoProd(${i})" style="display:flex;align-items:center;gap:10px;padding:9px 10px;margin-bottom:5px;border-radius:8px;cursor:pointer;background:${sel ? '#153a26' : '#1c1846'};border:1px solid ${sel ? '#25d366' : '#2c2660'}">
       <div style="width:22px;height:22px;border-radius:5px;flex-shrink:0;border:2px solid ${sel ? '#25d366' : '#514c96'};background:${sel ? '#25d366' : 'transparent'};display:flex;align-items:center;justify-content:center;font-weight:900;color:#0a2a1a">${sel ? '✓' : ''}</div>
@@ -1341,7 +1342,7 @@ function montarTextoPrecos() {
       if (p.precoAtacado != null) partes.push(`atacado ${brl(p.precoAtacado)}`);
       if (p.precoBling != null) partes.push(`unidade ${brl(p.precoBling)}`);
       if (p.precoFardo != null) partes.push(`fardo ${brl(p.precoFardo)}${p.caixaQtd ? ` (cx c/${p.caixaQtd})` : ''}`);
-      txt += `• ${p.nome}: ${partes.join(" | ") || 'consulte'}\n`;
+      txt += `• ${p.nome}: ${partes.join(" | ") || 'consulte'}${p.promocao ? ' 🔥 PROMOÇÃO' + (p.promocao.fim ? ' até ' + p.promocao.fim.split('-').reverse().slice(0, 2).join('/') : '') : ''}\n`;
     });
   });
   txt += "\n_Preços sujeitos a alteração_";

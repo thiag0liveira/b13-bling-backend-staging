@@ -120,6 +120,7 @@
     <label class="sw"><input type="checkbox" id="bindToggle" onchange="toggleBind()"> Vínculo Bling</label>
     <button class="btn btn-out" id="btnEstoque" onclick="atualizarEstoque()">📦 Atualizar estoque</button>
     <button class="btn btn-mag" onclick="exportPNG()">📷 Imagem (PNG)<span id="syncTabela" style="font-size:12px;color:#9a95c9;margin-right:8px"></span></button>
+    <label id="lblPromoImg" style="display:none;align-items:center;gap:6px;font-size:12px;font-weight:800;background:#3a1030;border:1px solid #ff0082;border-radius:8px;padding:6px 9px;color:#fff;cursor:pointer"><input type="checkbox" id="chkPromoImg" checked style="width:auto"> 🔥 Promoções na imagem (<span id="nPromoImg">0</span>)</label>
     <button class="btn btn-grn" onclick="publicarTabelaVendedor()" style="background:#00aa66">🎯 Disponibilizar p/ vendedores</button>
     <button class="btn btn-mag" onclick="exportPDF()">📄 Gerar PDF</button>
     <button class="btn btn-mag" onclick="enviarImagem()">📤 Enviar</button>
@@ -442,6 +443,7 @@ function marcarSync(estado) {
 }
 // busca a versão do servidor ao abrir — é ela que vale
 async function carregarDoServidor() {
+  carregarPromocoesDaTabela();
   try {
     const r = await fetch((META.backend || BACKEND_PADRAO) + "/api/tabela");
     const j = await r.json();
@@ -506,6 +508,7 @@ function render() {
       const off = desab || semEstoque; // apagado na tela E fora da exportação
       const row = document.createElement("div");
       row.className = "item" + (off ? " off" : "");
+      row.setAttribute("data-itid", it.id);
       if (off) row.setAttribute("data-html2canvas-ignore", "true"); // não entra na imagem/PDF
       row.innerHTML = `<div class="nm">` + `<button class="offbtn" data-edit data-html2canvas-ignore="true" title="${desab ? 'Reativar produto' : 'Desabilitar (sem excluir o vínculo)'}" onclick="toggleDesab('${cat.id}','${it.id}')">${desab ? '🚫' : '✅'}</button>` + `<span contenteditable="true" oninput="edIt('${cat.id}','${it.id}','nome',this.innerText)">${it.nome}</span>` + `${semEstoque ? '<span class="offtag semest">SEM ESTOQUE</span>' : ''}${desab ? '<span class="offtag desab">DESABILITADO</span>' : ''}` + ` <small contenteditable="true" oninput="edIt('${cat.id}','${it.id}','obs',this.innerText)">${it.obs || ""}</small></div>` + `<div class="pr">` + `<span class="cxwrap" data-html2canvas-ignore="true">un:<input class="cxin" type="number" min="1" value="${it.caixa || 1}" onchange="edCaixa('${cat.id}','${it.id}',this.value)"></span> ` + `R$ <span contenteditable="true" oninput="edPreco('${cat.id}','${it.id}',this.innerText)">${fmt(it.preco)}</span>` + `<button class="mvbtn" data-edit data-html2canvas-ignore="true" onclick="moveIt('${cat.id}','${it.id}',-1)">▲</button>` + `<button class="mvbtn" data-edit data-html2canvas-ignore="true" onclick="moveIt('${cat.id}','${it.id}',1)">▼</button>` + `<button class="xbtn" data-edit data-html2canvas-ignore="true" onclick="delIt('${cat.id}','${it.id}')">✕</button></div>`;
       box.appendChild(row);
@@ -1011,7 +1014,7 @@ function publicarTabelaVendedor() {
   // garante que a tabela saia limpa (sem controles de edição)
   document.body.classList.remove("editing", "binding");
   const larguraOriginal = calibrarLarguraPoster();
-  html2canvas(document.getElementById("poster"), {
+  h2cPromo(document.getElementById("poster"), {
     scale: 2,
     backgroundColor: "#262366",
     useCORS: true
@@ -1033,7 +1036,7 @@ function publicarTabelaVendedor() {
 }
 function enviarImagem() {
   const larguraOriginal = calibrarLarguraPoster();
-  html2canvas(document.getElementById("poster"), {
+  h2cPromo(document.getElementById("poster"), {
     scale: 2,
     backgroundColor: "#262366",
     useCORS: true
@@ -1078,7 +1081,7 @@ function enviarImagem() {
 }
 function exportPDF() {
   const larguraOriginal = calibrarLarguraPoster();
-  html2canvas(document.getElementById("poster"), {
+  h2cPromo(document.getElementById("poster"), {
     scale: 2,
     backgroundColor: "#262366",
     useCORS: true
@@ -1103,7 +1106,7 @@ function exportPDF() {
 }
 function exportPNG() {
   const larguraOriginal = calibrarLarguraPoster();
-  html2canvas(document.getElementById("poster"), {
+  h2cPromo(document.getElementById("poster"), {
     scale: 2,
     backgroundColor: "#262366",
     useCORS: true
@@ -1260,6 +1263,24 @@ function carregarJSON(ev) {
 }
 load();
 render();
+// ---- PROMOÇÕES NA IMAGEM: a tabela na tela e o que é salvo continuam com o preço BASE; só a imagem/PDF gerados saem com o preço da promoção ativa ----
+let PROMO_ED = {};
+async function carregarPromocoesDaTabela() {
+  try {
+    const b = (typeof META !== "undefined" && META && META.backend ? META.backend : BACKEND_PADRAO).replace(/\/$/, "");
+    const j = await fetch(b + "/api/tabela?promo=1").then(r => r.json()); PROMO_ED = {};
+    (j.model || []).forEach(c => (c.itens || []).forEach(it => { if (it.promocao && it.preco > 0) PROMO_ED[it.id] = { preco: it.preco, nome: it.promocao.nome }; }));
+    const n = Object.keys(PROMO_ED).length, l = document.getElementById("lblPromoImg"); if (l) { l.style.display = n ? "inline-flex" : "none"; document.getElementById("nPromoImg").textContent = n; }
+  } catch (e) {}
+}
+async function h2cPromo(el, opts) {
+  const chk = document.getElementById("chkPromoImg"), on = !!(chk && chk.checked && Object.keys(PROMO_ED).length), feitos = [];
+  if (on) document.querySelectorAll("#poster .item[data-itid]").forEach(row => { const p = PROMO_ED[row.getAttribute("data-itid")]; if (!p) return;
+    const sp = row.querySelector(".pr span[contenteditable]"), nm = row.querySelector(".nm span[contenteditable]");
+    if (sp) { feitos.push([sp, sp.textContent, sp.style.color]); sp.textContent = fmt(p.preco); sp.style.color = "#ff3b30"; }
+    if (nm) { feitos.push([nm, nm.textContent, nm.style.color]); nm.textContent = "🔥 " + nm.textContent; } });
+  try { return await html2canvas(el, opts); } finally { feitos.forEach(f => { f[0].textContent = f[1]; f[0].style.color = f[2]; }); }
+}
 carregarDoServidor();</script>
 </body>
 </html>

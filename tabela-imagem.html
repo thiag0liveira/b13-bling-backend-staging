@@ -49,7 +49,7 @@ let TABELA=null, CAT_ATIVA="todas";
 
 async function carregar(){
   try{
-    TABELA=await fetch(B+"/api/tabela").then(r=>r.json());
+    TABELA=await fetch(B+"/api/tabela?promo=1").then(r=>r.json());
     if(!TABELA||!TABELA.model||!TABELA.model.length){ document.getElementById("msg").textContent="Tabela não publicada ainda."; return; }
     document.getElementById("msg").style.display="none";
     montarFiltros();
@@ -72,7 +72,7 @@ async function desenhar(){
     const itens=(c.itens||[]).filter(i=>i.preco>0);
     if(!itens.length) return;
     linhas.push({tipo:"cat",texto:c.t||""});
-    itens.forEach(i=>linhas.push({tipo:"item",nome:i.nome||"",preco:i.preco,caixa:i.caixa||1}));
+    itens.forEach(i=>linhas.push({tipo:"item",nome:(i.promocao?"🔥 ":"")+(i.nome||""),preco:i.preco,caixa:i.caixa||1,promo:!!i.promocao}));
   });
 
   // dimensões — formato PAISAGEM (parecido com a tela de um celular deitado),
@@ -155,7 +155,7 @@ async function desenhar(){
         if(nome!==l.nome) nome=nome.slice(0,-1)+"…";
         ctx.fillStyle="#111"; ctx.textAlign="left";
         ctx.fillText(nome, x0+10, y+rowH/2+3);
-        ctx.font="900 17px Arial"; ctx.fillStyle="#c8007a"; ctx.textAlign="right";
+        ctx.font="900 17px Arial"; ctx.fillStyle=l.promo?"#e60000":"#c8007a"; ctx.textAlign="right";
         ctx.fillText(precoTxt, x0+colW-10, y+rowH/2+3);
         ctx.textAlign="left";
         // linha separadora

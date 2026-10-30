@@ -825,7 +825,7 @@ async function toggleModoTabela() {
     S.msg = "";
     render();
     try {
-      S.tabelaCompleta = await fetch(B + "/api/tabela").then(r => r.json());
+      S.tabelaCompleta = await fetch(B + "/api/tabela?promo=1").then(r => r.json());
     } catch (e) {
       S.tabelaCompleta = {
         model: []
