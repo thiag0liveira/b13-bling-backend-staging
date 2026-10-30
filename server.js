@@ -7906,7 +7906,8 @@ app.post("/api/caixa-atacado/editar-pagamento",async(req,res)=>{
     // linha, igual o Bling); senão, usa o total real que o Bling já tinha pro pedido
     const valorPedido = valorPedidoNovo;
     pags[idStr]={
-      ...(antigo||{}), pedidoId:idStr, valorPago:modoEstorno?_round2(Math.max(0,somaNova-rec.estornado)):somaNova, valorPedido, // no estorno: recebido bruto menos o que já foi devolvido em reaberturas anteriores frete:Number(req.body.frete||antigo?.frete||0), historico,
+      // no modo estorno o recebido é o bruto menos o que já foi devolvido em reaberturas anteriores
+      ...(antigo||{}), pedidoId:idStr, valorPago:modoEstorno?_round2(Math.max(0,somaNova-rec.estornado)):somaNova, valorPedido, frete:Number(req.body.frete||antigo?.frete||0), historico,
       statusPagamento: (modoEstorno?somaNova-rec.estornado:somaNova)>=valorPedido-0.05?"pago":(somaNova>0?"parcial":"pendente"),
     };
     salvarJSON(PAG_FILE,pags);
