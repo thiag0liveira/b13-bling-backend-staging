@@ -4073,7 +4073,7 @@ function resumoSessaoCaixa(sessao){
     const reg=Number(v.troco)||0;
     if(reg>0.009) return reg;                       // troco já registrado: usa ele
     const pago=(v.pagamentos||[]).reduce((a,p)=>a+(Number(p.valor)||0),0);
-    const sobra=+(pago-(Number(v.total)||0)-(Number(v.estornado)||0)).toFixed(2); // o que já foi devolvido (estorno) não é troco
+    const sobra=+(pago-(Number(v.total)||0)-(Number(v.estornado)||0)-(Number(v.estornoPendente)||0)).toFixed(2); // o que já foi devolvido (estorno) ou ainda vai ser devolvido (pendente) não é troco
     if(sobra<0.02) return 0;
     const emCartao=(v.pagamentos||[]).filter(p=>/cr[eé]dito|d[eé]bito/i.test(p.formaNome||"")&&!/^cr[eé]dito do cliente/i.test(p.formaNome||"")).reduce((a,p)=>a+(Number(p.valor)||0),0);
     const taxaEsperada=+((Number(v.total)||0)*TAXA_CT).toFixed(2);
@@ -4420,7 +4420,7 @@ function _auditarSessaoCaixa(s){
   vendas.forEach(m=>{
     const pago=(m.pagamentos||[]).reduce((a,p)=>a+(Number(p.valor)||0),0);
     const troco=Number(m.troco)||0;
-    const liquido=+(pago-troco-(Number(m.estornado)||0)).toFixed(2); // menos o que já foi devolvido ao cliente (estorno)
+    const liquido=+(pago-troco-(Number(m.estornado)||0)-(Number(m.estornoPendente)||0)).toFixed(2); // menos o que já foi devolvido ao cliente (estorno) ou que falta devolver
     const total=Number(m.total)||0;
     const dif=+(liquido-total).toFixed(2);
     if(Math.abs(dif)>0.02){
@@ -7792,12 +7792,14 @@ app.post("/api/caixa-atacado/editar-pagamento",async(req,res)=>{
     const itensMudaramEd=diffItensEd.mudou;
     // ===== PEDIDO JÁ PAGO + ITEM RETIRADO = ESTORNO. O que o cliente pagou NÃO é apagado: continua como entrada, e o que volta para ele vira uma saída (estorno) com o meio usado. =====
     const idStr0=String(pedidoId);
+    if(_pedidosSincronizando.has(idStr0)) return res.status(409).json({erro:"Este pedido ainda está sincronizando com o Bling da finalização anterior. Aguarde alguns segundos e tente de novo.",aindaSincronizando:true});
     const valorPedidoNovo = itensMudaramEd
       ? +(itensNovos.reduce((s2,i)=>s2+ +(Number(i.valor||0)*Number(i.quantidade||0)).toFixed(2),0)+Number(ped.outrasDespesas||0)+Number(req.body.frete!=null?req.body.frete:(ped.transporte?.frete||0))-Number(ped.desconto?.valor||0)).toFixed(2)
       : totalPedido;
     const rec=_recebimentoDoPedido(idStr0,ped);
     const sobraEstorno=itensMudaramEd?_round2(rec.liquido-valorPedidoNovo):0;   // soma de TODOS os itens retirados (e reaberturas anteriores): recebido líquido − novo total
-    const modoEstorno=sobraEstorno>0.05&&rec.linhas.length>0;
+    const somaTipada=_round2(linhas.reduce((a,p)=>a+(Number(p.valor)||0),0)), pagaMais=somaTipada>rec.bruto+0.05;   // o operador está registrando dinheiro NOVO além do que já estava recebido
+    const modoEstorno=sobraEstorno>0.05&&rec.linhas.length>0&&!pagaMais;
     let estornosReq=(Array.isArray(req.body.estornos)?req.body.estornos:[]).filter(e=>e&&Number(String(e.valor||"").replace(",","."))>0).map(e=>({valor:_round2(Number(String(e.valor).replace(",","."))),forma:e.forma,banco:String(e.banco||"").trim()}));
     const estornoPendenteReq=!!req.body.estornoPendente;
     let sxEst=null;
@@ -7814,6 +7816,21 @@ app.post("/api/caixa-atacado/editar-pagamento",async(req,res)=>{
         if(dinh>gaveta+0.009) return res.status(409).json({erro:`Não há dinheiro suficiente na gaveta (esperado ${brlN(gaveta)}). Use Pix ou crédito, ou faça um suprimento antes.`});
       }
     } else if(!linhas.length) return res.status(400).json({erro:"informe ao menos uma forma de pagamento"});
+    // JÁ HOUVE DEVOLUÇÃO neste pedido e o operador está só corrigindo pagamento/acrescentando item: as linhas podem vir BRUTAS (o que o cliente pagou) ou já LÍQUIDAS (descontada a devolução).
+    // Guardamos sempre o BRUTO como entrada e mantemos as devoluções como saída; para o Bling vão as linhas líquidas (somam o total).
+    const pendVal=(!modoEstorno&&rec.pendente&&Number(rec.pendente.valor)>0.049)?_round2(Number(rec.pendente.valor)):0;   // devolução que ainda falta fazer: o dinheiro continua com a loja
+    const estPrev=(!modoEstorno&&(rec.estornado>0.009||pendVal>0))?[..._estornosDoPedido(idStr0),...(pendVal>0?[{forma:"pendente",banco:"",valor:pendVal}]:[])]:[]; let linhasLiq=null, avisoPagamento=null, pendNovo=null;
+    if(estPrev.length){
+      const trocoIn=Number(req.body.troco)||0, somaL=_round2(linhas.reduce((a,p)=>a+(Number(p.valor)||0),0)), desc=_round2(rec.estornado+pendVal);
+      const ehLiquido=Math.abs(somaL-trocoIn-valorPedidoNovo)<=0.05&&Math.abs(somaL-trocoIn-desc-valorPedidoNovo)>0.05;
+      if(ehLiquido){ linhasLiq=linhas; linhas=_somarDevolucoes(linhas,estPrev,+1); }
+      else{ // valores brutos: a pendência que sobra é a nova (bruto − devolvido − total); só ela sai das parcelas do Bling
+        const pn=pendVal>0?_round2(Math.max(0,somaL-trocoIn-rec.estornado-valorPedidoNovo)):0;
+        linhasLiq=_somarDevolucoes(linhas,[...estPrev.filter(e=>e.forma!=="pendente"),...(pn>0.049?[{forma:"pendente",banco:"",valor:pn}]:[])],-1); }
+      const somaLiq=_round2(linhasLiq.reduce((a,p)=>a+(Number(p.valor)||0),0)), somaBruta=_round2(linhas.reduce((a,p)=>a+(Number(p.valor)||0),0));
+      if(pendVal>0) pendNovo=_round2(Math.max(0,somaBruta-trocoIn-rec.estornado-valorPedidoNovo));   // a pendência é recalculada com o novo total e o novo pagamento
+      if(Math.abs(somaLiq-trocoIn-valorPedidoNovo)>0.05) avisoPagamento=`Este pedido já teve ${fmt(rec.estornado)} devolvido${pendVal>0?` e ${fmt(pendVal)} a devolver`:""}. Pelas formas informadas, o cliente fica com ${fmt(somaLiq-trocoIn)} pagos (líquido) e o total é ${fmt(valorPedidoNovo)}.`;
+    }
     const estornoTxt=estornosReq.map(e=>`${fmt(e.valor)} (${_rotuloEstorno(e)})`).join(" · ")+(estornoPendenteReq&&modoEstorno?`${estornosReq.length?" · ":""}${fmt(_round2(sobraEstorno-estornosReq.reduce((a,e)=>a+e.valor,0)))} a devolver depois`:"");
 
     // descrição do pagamento ANTES: usa o histórico local (tem nome+valor); senão, as parcelas do Bling
@@ -7850,7 +7867,7 @@ app.post("/api/caixa-atacado/editar-pagamento",async(req,res)=>{
     // com troco) e corrige o pagamento aqui, o Bling recusa (soma das parcelas
     // diferente do total) ou, pior, o troco simplesmente não é considerado.
     let _trocoPendEd=Number(req.body.troco)||0;
-    const parcelasEdBase=linhas.map(p=>{
+    const parcelasEdBase=(linhasLiq||linhas).map(p=>{
       let v=Number(p.valor)||0;
       if(_trocoPendEd>0.0049 && /dinheiro/i.test(p.formaNome||"")){
         const d=Math.min(v,_trocoPendEd); v=+(v-d).toFixed(2); _trocoPendEd=+(_trocoPendEd-d).toFixed(2);
@@ -7894,6 +7911,26 @@ app.post("/api/caixa-atacado/editar-pagamento",async(req,res)=>{
       registrarAviso({tipo:"estoque_reposto_auto",titulo:`Pedido #${numero||ped.numero}: estoque reposto automaticamente (reabertura)`,pedidoId:idStr,numero:numero||ped.numero,operador:funcsNome,origem:"Caixa Atacado (reabertura)",fingerprint:`repo-ed-${idStr}-${Date.now()}`,estoqueAjustado:estoqueRepostoEd.map(r=>`${r.nome||("produto "+r.produtoId)} +${r.faltava}`).join(", "),oQueFazer:"Confira no Bling se o saldo desses produtos está certo."});
     }
 
+    // ===== CONFERE NO BLING o que foi gravado (itens, total, parcelas e etapa) ANTES de registrar qualquer coisa no sistema =====
+    let avisoSitEd=null;
+    try{ await sleep(350); const chk=await bling(`/pedidos/vendas/${pedidoId}`).then(r=>r?.data).catch(()=>null);
+      if(chk){
+        if(itensMudaramEd){
+          const mp=l=>{ const m={}; (l||[]).forEach(i=>{ const k=String(i.produto?.id!=null?i.produto.id:i.produtoId); m[k]=_round2((m[k]||0)+(Number(i.quantidade)||0)); }); return m; }, esp=mp(itensNovos), grav=mp(chk.itens), dif=[];
+          new Set([...Object.keys(esp),...Object.keys(grav)]).forEach(k=>{ if(Math.abs((esp[k]||0)-(grav[k]||0))>0.0005) dif.push(`produto ${k}: pedido ${esp[k]||0}, no Bling ${grav[k]||0}`); });
+          if(dif.length){
+            try{ addLog(idStr,"itens_nao_gravados_bling",funcionarioId,funcsNome,{diferencas:dif.slice(0,10),origem:"Caixa Atacado (reabertura)"}); registrarAviso({tipo:"itens_nao_gravados_bling",titulo:`Pedido #${numero||ped.numero}: o Bling NÃO gravou os itens da reabertura`,pedidoId:idStr,numero:numero||ped.numero,operador:funcsNome,origem:"Caixa Atacado (reabertura)",fingerprint:`naogravou-${idStr}-${Date.now()}`,oQueFazer:`O Bling respondeu que salvou, mas os itens ficaram diferentes do pedido (${dif.slice(0,4).join("; ")}). Nada foi registrado no caixa nem no pagamento. Confira o pedido no Bling e tente de novo.`}); }catch(e){}
+            return res.status(502).json({erro:`O Bling respondeu que salvou, mas os itens NÃO ficaram como você pediu (${dif.slice(0,4).join("; ")}). Nada foi registrado no caixa nem no pagamento. Confira o pedido no Bling e tente de novo.`,divergencia:dif});
+          }
+          if(Math.abs((Number(chk.total)||0)-valorPedidoNovo)>0.05) avisoPagamento=(avisoPagamento?avisoPagamento+" ":"")+`Atenção: o total ficou ${fmt(chk.total)} no Bling e o sistema esperava ${fmt(valorPedidoNovo)}. Confira o pedido.`;
+        }
+        const sitEsp=(itensMudaramEd&&Number(ped.situacao?.id)===SIT.SEP_PEND)?SIT.EM_SEP:Number(ped.situacao?.id||0), sitAgora=Number(chk.situacao?.id||0);
+        if(sitEsp&&sitAgora&&sitAgora!==sitEsp){
+          let voltou=false; try{ const rv=await mudarSituacaoPedido(Number(pedidoId),sitEsp); voltou=!!(rv&&rv.ok); }catch(e){}
+          if(!voltou){ avisoSitEd=`Os dados foram gravados, mas o pedido ficou em "${nomeSituacao(sitAgora)}" no Bling (devia estar em "${nomeSituacao(sitEsp)}") e não consegui devolver. Ele pode sumir da separação e da conferência: mude a etapa dele.`;
+            try{ addLog(idStr,"pedido_fora_do_fluxo",funcionarioId,funcsNome,{esperado:nomeSituacao(sitEsp),atual:nomeSituacao(sitAgora)}); registrarAviso({tipo:"pedido_fora_do_fluxo",titulo:`Pedido #${numero||ped.numero} ficou em "${nomeSituacao(sitAgora)}" depois da reabertura`,pedidoId:idStr,numero:numero||ped.numero,operador:funcsNome,origem:"Caixa Atacado (reabertura)",fingerprint:`foradofluxo-${idStr}`,oQueFazer:avisoSitEd}); }catch(e){} } }
+      } }catch(e){ console.error("[editar-pagamento conferencia]",e.message); }
+
     // atualiza registro local de pagamento -- o total do PEDIDO continua sendo o
     // real (itens, do Bling), não o valor pago. Pagar a mais é troco, não vira um
     // "pedido mais caro" (bug corrigido: antes o total virava a própria soma paga).
@@ -7901,15 +7938,20 @@ app.post("/api/caixa-atacado/editar-pagamento",async(req,res)=>{
     const trocoEd=modoEstorno?rec.troco:(Number(req.body.troco)||0);
     const historico=modoEstorno
       ? ((antigo&&Array.isArray(antigo.historico)&&antigo.historico.length)?antigo.historico:linhas.map(p=>({em:Date.now(),valor:+Number(p.valor).toFixed(2),formaNome:p.formaNome||"",tipo:"caixa_atacado"})))
-      : linhas.map(p=>({em:Date.now(),valor:+Number(p.valor).toFixed(2),formaNome:p.formaNome||"",tipo:"caixa_atacado_edit"}));
+      : [...linhas.map(p=>({em:Date.now(),valor:+Number(p.valor).toFixed(2),formaNome:p.formaNome||"",tipo:"caixa_atacado_edit"})),
+         ...(estPrev.length?estPrev.filter(e=>e.forma!=="pendente").map(e=>({em:e.em,valor:-e.valor,formaNome:_nomeFormaEstorno(e),banco:e.banco||null,tipo:"estorno",origem:e.origem||"Estorno ao cliente",motivo:e.motivo,autorizadoPor:e.autorizadoPor,funcionarioNome:e.por})):[])];
     // total do pedido: se os itens mudaram, recalcula a partir deles (arredondando por
     // linha, igual o Bling); senão, usa o total real que o Bling já tinha pro pedido
     const valorPedido = valorPedidoNovo;
     pags[idStr]={
       // no modo estorno o recebido é o bruto menos o que já foi devolvido em reaberturas anteriores
-      ...(antigo||{}), pedidoId:idStr, valorPago:modoEstorno?_round2(Math.max(0,somaNova-rec.estornado)):somaNova, valorPedido, frete:Number(req.body.frete||antigo?.frete||0), historico,
-      statusPagamento: (modoEstorno?somaNova-rec.estornado:somaNova)>=valorPedido-0.05?"pago":(somaNova>0?"parcial":"pendente"),
+      ...(antigo||{}), pedidoId:idStr, valorPago:_round2(Math.max(0,somaNova-rec.estornado)), valorPedido, frete:Number(req.body.frete||antigo?.frete||0), historico,
+      statusPagamento: (somaNova-rec.estornado)>=valorPedido-0.05?"pago":(somaNova>0?"parcial":"pendente"),
     };
+    if(pendNovo!==null){ // devolução pendente recalculada depois da edição
+      if(pendNovo>0.049) pags[idStr].estornoPendente={...(pags[idStr].estornoPendente||{}),valor:pendNovo};
+      else { delete pags[idStr].estornoPendente; try{ const RS=lerEstornosResolvidos(); RS[idStr]={em:Date.now(),por:funcsNome}; salvarJSON(ESTORNOS_RESOLVIDOS_FILE,RS); }catch(e){} }
+    }
     salvarJSON(PAG_FILE,pags);
 
     // marca o movimento no histórico do caixa (vermelho, com o que mudou) e atualiza total/frete
@@ -7926,6 +7968,7 @@ app.post("/api/caixa-atacado/editar-pagamento",async(req,res)=>{
       retirados:diffItensEd.retirados.map(_fmtItem),acrescentados:diffItensEd.acrescentados.map(_fmtItem),
       alterados:diffItensEd.alterados.map(a=>`${a.nome}: ${a.de.quantidade}x ${fmt(a.de.valor)} → ${a.para.quantidade}x ${fmt(a.para.valor)}`)}]:[];
     const achouMov=marcarMovimentoAlterado(idStr, linhas.map(p=>({formaNome:p.formaNome||"",valor:+Number(p.valor).toFixed(2)})), alteracao, {novoTotal:valorPedido, frete:Number(req.body.frete||0), itens:itensMudaramEd?itensNovos:null, alteracoesExtra:altItens, troco:trocoEd});
+    if(pendNovo!==null){ try{ const dP2=lerCaixaSessoes(); let mx2=false; for(const s3 of (dP2.sessoes||[])) for(const m3 of (s3.movimentos||[])) if(m3&&m3.tipo==="venda"&&!m3.cancelado&&String(m3.pedidoId)===idStr){ if(pendNovo>0.049) m3.estornoPendente=pendNovo; else delete m3.estornoPendente; mx2=true; } if(mx2) salvarCaixaSessoes(dP2); }catch(e){} }
     addLog(idStr,"pagamento_editado_caixa",funcionarioId,alteracao.por,{autorizadoPor:auth.funcionario.nome,de:descAntes,para:descDepois,...(modoEstorno?{estorno:estornoTxt,recebidoLiquido:rec.liquido,novoTotal:valorPedidoNovo}:{})});
     let estornoResp=null;
     if(modoEstorno){
@@ -7937,8 +7980,13 @@ app.post("/api/caixa-atacado/editar-pagamento",async(req,res)=>{
         salvarCaixaSessoes(dE);
       }
       const restante=_round2(sobraEstorno-feito);
+      if(!(restante>0.05&&(estornoPendenteReq||falhas.length))){ // nada mais a devolver: some qualquer pendência antiga
+        try{ const pg5=lerPag(), rg5=pg5[idStr]; if(rg5&&rg5.estornoPendente){ delete rg5.estornoPendente; salvarPag(pg5); const RS=lerEstornosResolvidos(); RS[idStr]={em:Date.now(),por:alteracao.por}; salvarJSON(ESTORNOS_RESOLVIDOS_FILE,RS); }
+          const dP3=lerCaixaSessoes(); let mx3=false; for(const s4 of (dP3.sessoes||[])) for(const m4 of (s4.movimentos||[])) if(m4&&m4.tipo==="venda"&&!m4.cancelado&&String(m4.pedidoId)===idStr&&m4.estornoPendente){ delete m4.estornoPendente; mx3=true; } if(mx3) salvarCaixaSessoes(dP3); }catch(e){}
+      }
       if(restante>0.05&&(estornoPendenteReq||falhas.length)){
         const pg2=lerPag(), rg=pg2[idStr]; if(rg){ rg.estornoPendente={valor:restante,desde:Date.now(),por:alteracao.por,autorizadoPor:auth.funcionario.nome,motivo:`Itens retirados na reabertura do pedido #${numero||ped.numero}`}; salvarPag(pg2); }
+        try{ const dP=lerCaixaSessoes(); let mx=false; for(const s2 of (dP.sessoes||[])) for(const m2 of (s2.movimentos||[])) if(m2&&m2.tipo==="venda"&&!m2.cancelado&&String(m2.pedidoId)===idStr){ m2.estornoPendente=restante; mx=true; } if(mx) salvarCaixaSessoes(dP); }catch(e){}
         registrarAviso({tipo:"estorno_pendente",titulo:`Estorno pendente — pedido #${numero||ped.numero} (R$ ${fmt(restante)} a devolver)`,pedidoId:idStr,numero:numero||ped.numero,operador:alteracao.por,origem:"Reabertura no Caixa Atacado",fingerprint:`estornopend-${idStr}-${Date.now()}`,oQueFazer:`O pedido #${numero||ped.numero} foi reaberto e teve item retirado: o cliente já tinha pago ${fmt(rec.liquido)} e o novo total é ${fmt(valorPedidoNovo)}. Faltam ${fmt(restante)} a devolver. Use "Estorno ao cliente" no Caixa Atacado informando o número do pedido.${falhas.length?" Motivo da pendência: "+falhas.join("; "):""}`});
         addLog(idStr,"estorno_pendente",funcionarioId,alteracao.por,{valor:restante,autorizadoPor:auth.funcionario.nome});
       }
@@ -7969,7 +8017,7 @@ app.post("/api/caixa-atacado/editar-pagamento",async(req,res)=>{
       }
     }
 
-    res.json({ok:true, estorno:estornoResp, autorizadoPor:auth.funcionario.nome, de:descAntes, para:descDepois, numero:numero||ped.numero, movimentoAtualizado:achouMov, incluidoNoCaixa,
+    res.json({ok:true, avisoPagamento, avisoSituacao:avisoSitEd, estorno:estornoResp, autorizadoPor:auth.funcionario.nome, de:descAntes, para:descDepois, numero:numero||ped.numero, movimentoAtualizado:achouMov, incluidoNoCaixa,
       itensAlterados:itensMudaramEd?{retirados:diffItensEd.retirados.map(_fmtItem),acrescentados:diffItensEd.acrescentados.map(_fmtItem),alterados:diffItensEd.alterados.map(a=>`${a.nome}: ${a.de.quantidade}x→${a.para.quantidade}x`)}:null,
       estoqueReposto:estoqueRepostoEd,
       estoque: relancamento ? (relancamento.ok
@@ -8318,10 +8366,19 @@ app.post("/api/caixa-atacado/cancelar-venda",async(req,res)=>{
 
     // zera/estorna o pagamento local
     const pags=lerPag(); const idStr=String(pedidoId); const antigo=pags[idStr]||null;
+    const pendAnt=antigo&&antigo.estornoPendente?antigo.estornoPendente:null;
     if(antigo){
       pags[idStr]={...antigo, statusPagamento:"cancelado", valorPago:0, canceladoEm:Date.now()};
+      delete pags[idStr].estornoPendente; // cancelar devolve TUDO o que foi recebido: não sobra devolução pendente
       salvarJSON(PAG_FILE,pags);
+      if(pendAnt){ try{ const R=lerEstornosResolvidos(); R[idStr]={em:Date.now(),por:(lerJSON(FUNC_FILE,{})[funcionarioId]?.nome)||"—"}; salvarJSON(ESTORNOS_RESOLVIDOS_FILE,R); }catch(e){} }
     }
+    // as devoluções que já tinham saído deste pedido ficam dentro do cancelamento (a venda inteira sai do caixa): são anuladas para não descontar duas vezes da gaveta
+    try{ const dCx=lerCaixaSessoes(); let mexeu=false, anuladas=0;
+      for(const s2 of (dCx.sessoes||[])){ let m2x=false; for(const m2 of (s2.movimentos||[])){ if(m2&&m2.tipo==="estorno"&&!m2.cancelado&&String(m2.pedidoId)===idStr){ m2.cancelado=true; m2.anuladoPeloCancelamento=true; m2x=true; mexeu=true; anuladas++; } }
+        if(m2x&&s2.fechadaEm&&s2.resumoFinal){ try{ s2.resumoFinal=resumoSessaoCaixa(s2); }catch(e){} } }
+      if(mexeu){ salvarCaixaSessoes(dCx); addLog(idStr,"estornos_anulados_pelo_cancelamento",funcionarioId,(lerJSON(FUNC_FILE,{})[funcionarioId]?.nome)||"—",{quantidade:anuladas}); }
+    }catch(e){ console.error("[cancelar-venda estornos]",e.message); }
 
     // marca o movimento como cancelado no histórico do caixa
     const funcs=lerJSON(FUNC_FILE,{});
@@ -9240,15 +9297,16 @@ function _retiradosDe(pedidoId,propId,itensAtuais){
 }
 function _marcarRetiradosInformados(pedidoId,propId,por,lista){ const ks=_chavesBaseItens(pedidoId,propId), B={..._lerBaseItens()}; let ok=false; ks.forEach(k=>{ if(B[k]&&B[k].base){ B[k]={...B[k],informado:{em:Date.now(),por:por||"",lista:(lista||[]).map(x=>({produtoId:String(x.produtoId),quantidade:Number(x.quantidade)}))}}; ok=true; } }); if(ok) _salvarBaseItens(B); return ok; }
 function diffItens(antes, depois){
-  const A={}, D={};
-  (antes||[]).forEach(i=>{ if(i.produtoId) A[String(i.produtoId)]={...i,quantidade:Number(i.quantidade),valor:Number(i.valor)}; });
-  (depois||[]).forEach(i=>{ if(i.produtoId) D[String(i.produtoId)]={...i,quantidade:Number(i.quantidade),valor:Number(i.valor)}; });
+  // o MESMO produto pode vir em duas linhas (ex.: preço de promoção + preço normal): soma quantidade e valor por produto, senão a segunda linha sobrescrevia a primeira e uma retirada passava despercebida
+  const agrupa=(lista)=>{ const M={}; (lista||[]).forEach(i=>{ if(!i.produtoId) return; const k=String(i.produtoId), q=Number(i.quantidade)||0, v=Number(i.valor)||0; const o=M[k]||(M[k]={...i,quantidade:0,total:0}); o.quantidade+=q; o.total+=q*v; o.nome=o.nome||i.nome; });
+    Object.values(M).forEach(o=>{ o.quantidade=+o.quantidade.toFixed(4); o.total=+o.total.toFixed(2); o.valor=o.quantidade>0?+(o.total/o.quantidade).toFixed(4):0; }); return M; };
+  const A=agrupa(antes), D=agrupa(depois);
   const retirados=[], acrescentados=[], alterados=[];
   for(const k of Object.keys(A)){ if(!D[k]) retirados.push({produtoId:k,nome:A[k].nome||"",quantidade:A[k].quantidade,valor:A[k].valor}); }
   for(const k of Object.keys(D)){
     if(!A[k]){ acrescentados.push({produtoId:k,nome:D[k].nome||"",quantidade:D[k].quantidade,valor:D[k].valor}); continue; }
     const a=A[k], d=D[k];
-    if(a.quantidade!==d.quantidade || Math.abs(a.valor-d.valor)>0.001){
+    if(a.quantidade!==d.quantidade || Math.abs(a.total-d.total)>0.005){
       alterados.push({produtoId:k,nome:d.nome||a.nome||"",de:{quantidade:a.quantidade,valor:a.valor},para:{quantidade:d.quantidade,valor:d.valor}});
     }
   }
@@ -10918,7 +10976,7 @@ app.get("/api/diag/atendidos",requireAdmin,async(req,res)=>{
 // troco de uma venda de caixa (mesma regra do resumo do caixa): o registrado; senão a sobra paga em dinheiro (sem confundir com a taxa de cartão)
 function _trocoDaVenda(v){
   const reg=Number(v.troco)||0; if(reg>0.009) return reg;
-  const pago=(v.pagamentos||[]).reduce((a,p)=>a+(Number(p.valor)||0),0), sobra=+(pago-(Number(v.total)||0)-(Number(v.estornado)||0)).toFixed(2); if(sobra<0.02) return 0;
+  const pago=(v.pagamentos||[]).reduce((a,p)=>a+(Number(p.valor)||0),0), sobra=+(pago-(Number(v.total)||0)-(Number(v.estornado)||0)-(Number(v.estornoPendente)||0)).toFixed(2); if(sobra<0.02) return 0;
   const emCartao=(v.pagamentos||[]).filter(p=>/cr[eé]dito|d[eé]bito/i.test(p.formaNome||"")&&!/^cr[eé]dito do cliente/i.test(p.formaNome||"")).reduce((a,p)=>a+(Number(p.valor)||0),0);
   if(emCartao>0.009&&Math.abs(sobra-+((Number(v.total)||0)*0.035).toFixed(2))<0.05) return 0;
   const emDinheiro=(v.pagamentos||[]).filter(p=>/dinheiro/i.test(p.formaNome||"")).reduce((a,p)=>a+(Number(p.valor)||0),0);
@@ -13071,15 +13129,28 @@ function _parcelasEscaladas(ped,total){ const ps=(ped.parcelas||[]).filter(p=>p.
   const f=total/soma, out=ps.map(p=>({formaId:p.formaPagamento.id,valor:_round2((Number(p.valor)||0)*f)})), dif=_round2(total-out.reduce((a,p)=>a+p.valor,0)); if(Math.abs(dif)>=0.01) out[out.length-1].valor=_round2(out[out.length-1].valor+dif); return out.filter(p=>p.valor>0); }
 function _rotuloEstorno(e){ return e.forma==="pix"?("Pix"+(e.banco?" "+e.banco:"")):(e.forma==="credito"?"crédito do cliente":"dinheiro da gaveta"); }
 function _sessaoDoOperadorAberta(d,funcionarioId){ const ab=(d.sessoes||[]).filter(s=>!s.fechadaEm&&String(s.funcionarioId)===String(funcionarioId)); return ab.find(s=>(s.tipoCaixa||"")==="atacado")||ab[0]||null; }
+// devoluções (estornos) já feitas num pedido, a partir dos movimentos do caixa
+function _estornosDoPedido(idStr){ const L=[]; try{ (lerCaixaSessoesCompleto().sessoes||[]).forEach(s=>(s.movimentos||[]).forEach(m=>{ if(m&&m.tipo==="estorno"&&!m.cancelado&&String(m.pedidoId)===String(idStr)) L.push({em:m.em,valor:_round2(Number(m.valor)||0),forma:m.forma,banco:m.banco||"",motivo:m.motivo||"",autorizadoPor:m.autorizadoPor||"",por:m.por||"",origem:m.origem||""}); })); }catch(e){} return L.sort((a,b)=>a.em-b.em); }
+const _nomeFormaEstorno=e=>e.forma==="pix"?("Pix Banco "+(e.banco||"")).trim():(e.forma==="credito"?"Crédito do cliente":"Dinheiro"); // "pendente" (ainda não devolvido) sai do dinheiro
+// soma (sinal +1) ou tira (sinal −1) as devoluções já feitas das linhas de pagamento: linhas BRUTAS (o que o cliente pagou) x LÍQUIDAS (o que ficou depois das devoluções)
+function _somarDevolucoes(linhas,est,sinal){
+  const L=linhas.map(p=>({...p,valor:Number(p.valor)||0})), nm=p=>String(p.formaNome||"");
+  const alvo=e=>{ if(e.forma==="dinheiro") return L.find(p=>/dinheiro/i.test(nm(p)));
+    if(e.forma==="pix"){ const rx=e.banco?new RegExp(e.banco.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"),"i"):null; return L.find(p=>/pix/i.test(nm(p))&&(!rx||rx.test(nm(p))))||L.find(p=>/pix/i.test(nm(p))); }
+    return L.find(p=>/dinheiro/i.test(nm(p)))||L[0]; };
+  est.forEach(e=>{ let v=e.valor, t=alvo(e);
+    if(sinal>0){ if(t) t.valor=_round2(t.valor+v); else L.push({formaId:L[0]&&L[0].formaId,formaNome:_nomeFormaEstorno(e),valor:v}); }
+    else{ const tira=(p,q)=>{ const d=Math.min(p.valor,q); p.valor=_round2(p.valor-d); return _round2(q-d); }; if(t) v=tira(t,v); for(const p of [...L].sort((a,b)=>b.valor-a.valor)){ if(v<=0.004) break; v=tira(p,v); } } });
+  return L.filter(p=>p.valor>0.004); }
 // grava o estorno no registro de pagamento do pedido (histórico negativo, recebido líquido, pendência) e na venda do caixa (campo "estornado", que tira a sobra da conta de troco)
 function _amarrarEstornoAoPedido(d,pid,mov,quem){
-  const pags=lerPag(), reg=pags[pid];
+  const pags=lerPag(), reg=pags[pid]; let pendAgora=null;
   if(reg){ (reg.historico||=[]).push({em:mov.em,valor:-mov.valor,formaNome:mov.forma==="dinheiro"?"Dinheiro":(mov.forma==="credito"?"Crédito do cliente":("Pix Banco "+(mov.banco||"").trim()).trim()),banco:mov.banco||null,tipo:"estorno",origem:mov.origem||"Estorno ao cliente",motivo:mov.motivo||"",autorizadoPor:quem||"",funcionarioNome:mov.por||""});
     const vp=Number(reg.valorPedido)||0; reg.valorPago=_round2(Math.max(vp,(Number(reg.valorPago)||0)-mov.valor)); // só tira do recebido o que passa do total do pedido (a sobra devolvida)
     reg.statusPagamento=reg.valorPago>=vp-0.05?"pago":(reg.valorPago>0?"parcial":"pendente");
-    if(reg.estornoPendente){ reg.estornoPendente.valor=_round2((Number(reg.estornoPendente.valor)||0)-mov.valor); if(reg.estornoPendente.valor<=0.049){ (reg.estornosFeitosDepois||=[]).push({em:mov.em,por:quem}); delete reg.estornoPendente; try{ const R=lerEstornosResolvidos(); R[pid]={em:Date.now(),por:quem||"—"}; salvarJSON(ESTORNOS_RESOLVIDOS_FILE,R); }catch(e){} } }
+    if(reg.estornoPendente){ reg.estornoPendente.valor=_round2((Number(reg.estornoPendente.valor)||0)-mov.valor); pendAgora=reg.estornoPendente.valor>0.049?reg.estornoPendente.valor:0; if(reg.estornoPendente.valor<=0.049){ (reg.estornosFeitosDepois||=[]).push({em:mov.em,por:quem}); delete reg.estornoPendente; try{ const R=lerEstornosResolvidos(); R[pid]={em:Date.now(),por:quem||"—"}; salvarJSON(ESTORNOS_RESOLVIDOS_FILE,R); }catch(e){} } }
     salvarPag(pags); }
-  for(const s of (d.sessoes||[])){ let mexeu=false; for(const m of (s.movimentos||[])){ if(m&&m.tipo==="venda"&&!m.cancelado&&String(m.pedidoId)===pid){ m.estornado=_round2((Number(m.estornado)||0)+mov.valor); (m.estornos||=[]).push({em:mov.em,valor:mov.valor,forma:mov.forma,banco:mov.banco||"",por:quem||""}); mexeu=true; } }
+  for(const s of (d.sessoes||[])){ let mexeu=false; for(const m of (s.movimentos||[])){ if(m&&m.tipo==="venda"&&!m.cancelado&&String(m.pedidoId)===pid){ m.estornado=_round2((Number(m.estornado)||0)+mov.valor); (m.estornos||=[]).push({em:mov.em,valor:mov.valor,forma:mov.forma,banco:mov.banco||"",por:quem||""}); if(pendAgora!==null){ if(pendAgora>0) m.estornoPendente=pendAgora; else delete m.estornoPendente; } mexeu=true; } }
     if(mexeu&&s.fechadaEm&&s.resumoFinal){ try{ s.resumoFinal=resumoSessaoCaixa(s); }catch(e){} } } }
 // registra UM estorno na sessão de caixa (valida gaveta/banco/cliente); devolve {mov} ou {erro,status}
 function _aplicarEstornoCliente(d,sx,o){
@@ -13438,9 +13509,9 @@ function _movsBancariosAuto(){
       if(m.tipo==="venda") (m.pagamentos||[]).forEach(p=>{ const v=Number(p.valor)||0, bk=_bancoDaForma(p.banco,p.formaNome); if(!bk||!(v>0)||!semDinheiroNemCartao(p.formaNome)) return; chaves.add(`${m.pedidoId}|${v.toFixed(2)}|${_nomeNrm(bk)}`);
         out.push({id:`c:${m.pedidoId||""}:${m.em}:${v}`,data:_diaBRk(m.em),ms:Number(m.em)||0,tipo:"entrada",valor:_round2(v),banco:bk,origem:"Recebido no caixa",forma:p.formaNome||"Pix",descricao:`${p.formaNome||"Pix"} · ${m.clienteNome||"cliente"}${m.pedidoNumero?" · pedido "+m.pedidoNumero:""}`,ref:{tipo:"pedido",id:m.pedidoId}}); });
       else if(m.tipo==="estorno"&&m.banco){ const v=Number(m.valor)||0; if(v>0){ chaves.add(`${m.pedidoId}|${v.toFixed(2)}|${_nomeNrm(m.banco)}`); out.push({id:`e:${m.pedidoId||""}:${m.em}:${v}`,data:_diaBRk(m.em),ms:Number(m.em)||0,tipo:"saida",valor:_round2(v),banco:m.banco,origem:"Estorno ao cliente",forma:"Pix",descricao:`Estorno · ${m.clienteNome||"cliente"}${m.pedidoNumero?" · pedido "+m.pedidoNumero:""}`,ref:{tipo:"pedido",id:m.pedidoId}}); } } })); }catch(e){}
-  try{ Object.entries(lerPag()||{}).forEach(([pid,r])=>(r.historico||[]).forEach(h=>{ const bk=_bancoDaForma(h&&h.banco,h&&h.formaNome); if(!h||!bk||h.soRegistrarLog) return; const v=Number(h.valor)||0; if(!v||!semDinheiroNemCartao(h.formaNome)) return;
+  try{ Object.entries(lerPag()||{}).forEach(([pid,r])=>{ if(r&&r.statusPagamento==="cancelado") return; (r.historico||[]).forEach(h=>{ const bk=_bancoDaForma(h&&h.banco,h&&h.formaNome); if(!h||!bk||h.soRegistrarLog) return; const v=Number(h.valor)||0; if(!v||!semDinheiroNemCartao(h.formaNome)) return;
       if(chaves.has(`${pid}|${Math.abs(v).toFixed(2)}|${_nomeNrm(bk)}`)) return; // já veio do movimento do caixa
-      out.push({id:`p:${pid}:${h.em}:${v}`,data:_diaBRk(h.em),ms:Number(h.em)||0,tipo:v>0?"entrada":"saida",valor:_round2(Math.abs(v)),banco:bk,origem:v>0?"Recebido (pedido)":"Estorno ao cliente",forma:h.formaNome||"Pix",descricao:`${h.formaNome||"Pix"} · pedido ${pid}${h.origem?" · "+h.origem:""}`,ref:{tipo:"pedido",id:pid}}); })); }catch(e){}
+      out.push({id:`p:${pid}:${h.em}:${v}`,data:_diaBRk(h.em),ms:Number(h.em)||0,tipo:v>0?"entrada":"saida",valor:_round2(Math.abs(v)),banco:bk,origem:v>0?"Recebido (pedido)":"Estorno ao cliente",forma:h.formaNome||"Pix",descricao:`${h.formaNome||"Pix"} · pedido ${pid}${h.origem?" · "+h.origem:""}`,ref:{tipo:"pedido",id:pid}}); }); }); }catch(e){}
   return out; }
 function _movsDaContaFin(c,auto,manuais){
   const nomes=new Set([c.nome,...(c.aliases||[])].map(_nomeNrm)), ini=c.dataInicial||"0000-00-00", L=[];
@@ -15084,9 +15155,10 @@ function _livroRecebimentosLocal(t0,t1){
     const doPeriodo=(p.historico||[]).filter(h=>h&&h.valor&&h.em&&!h.soRegistrarLog&&h.em>=t0&&h.em<=t1&&!/^cr[eé]dito do cliente/i.test(h.formaNome||""));
     if(!doPeriodo.length) continue;
     // troco: entradas do caixa que somam mais que o pedido -> o excedente sai do dinheiro
-    let troco=0; const doCaixa=doPeriodo.filter(h=>h.tipo==="caixa_atacado");
-    if(doCaixa.length&&Number(p.valorPedido)>0){ const soma=doCaixa.reduce((s2,h)=>s2+Number(h.valor),0), jaDevolvido=(p.historico||[]).filter(h=>h&&h.tipo==="estorno"&&Number(h.valor)<0).reduce((s2,h)=>s2+Math.abs(Number(h.valor)),0); if(soma>Number(p.valorPedido)+jaDevolvido+0.009) troco=+(soma-Number(p.valorPedido)-jaDevolvido).toFixed(2); } // o estorno já aparece como saída: não descontar de novo como troco
-    doPeriodo.forEach(h=>{ let v=Number(h.valor); if(troco>0&&h.tipo==="caixa_atacado"&&/dinheiro/i.test(h.formaNome||"")){ const d=Math.min(troco,v); v-=d; troco-=d; }
+    const ehCx=h=>h.tipo==="caixa_atacado"||h.tipo==="caixa_atacado_edit"; // a correção de pagamento também grava o valor entregue (com o troco dentro)
+    let troco=0; const doCaixa=doPeriodo.filter(ehCx);
+    if(doCaixa.length&&Number(p.valorPedido)>0){ const soma=doCaixa.reduce((s2,h)=>s2+Number(h.valor),0), jaDevolvido=(p.historico||[]).filter(h=>h&&h.tipo==="estorno"&&Number(h.valor)<0).reduce((s2,h)=>s2+Math.abs(Number(h.valor)),0)+(Number(p.estornoPendente&&p.estornoPendente.valor)||0); if(soma>Number(p.valorPedido)+jaDevolvido+0.009) troco=+(soma-Number(p.valorPedido)-jaDevolvido).toFixed(2); } // o estorno já aparece como saída: não descontar de novo como troco
+    doPeriodo.forEach(h=>{ let v=Number(h.valor); if(troco>0&&ehCx(h)&&/dinheiro/i.test(h.formaNome||"")){ const d=Math.min(troco,v); v-=d; troco-=d; }
       if(Math.abs(v)<0.005) return;
       lanc.push({pedidoId:String(id),em:h.em,forma:h.formaNome||(h.tipo==="estorno"?"Estorno":"Não identificada"),valor:+v.toFixed(2),origem:_origemDoHist(h),por:h.funcionarioNome||""}); });
   }
