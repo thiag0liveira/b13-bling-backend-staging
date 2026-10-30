@@ -13560,7 +13560,7 @@ app.post("/api/promocoes",_permPromo,(req,res)=>{ try{ const b=req.body||{}, D=l
   const itens=[], vistos=new Set(); for(const i of (Array.isArray(b.itens)?b.itens:[])){ const id=String(i&&i.produtoId||"").trim(), preco=Number(String(i&&i.preco).replace(",",".")), aplica=["atacado","varejo","ambos"].includes(i&&i.aplica)?i.aplica:null;
     if(!id) continue; if(!(preco>0)) return erro(`informe o preço de "${i.nome||id}"`); if(!aplica) return erro(`escolha onde vale o preço de "${i.nome||id}" (atacado, varejo ou os dois)`);
     for(const m of (aplica==="ambos"?["atacado","varejo"]:[aplica])){ const k=id+"|"+m; if(vistos.has(k)) return erro(`"${i.nome||id}" aparece duas vezes para ${m}`); vistos.add(k); }
-    itens.push({produtoId:id,nome:String(i.nome||"").slice(0,120),codigo:String(i.codigo||"").slice(0,40),preco:+preco.toFixed(2),aplica}); }
+    itens.push({produtoId:id,nome:String(i.nome||"").slice(0,120),codigo:String(i.codigo||"").slice(0,40),preco:+preco.toFixed(2),aplica,...(i.saborDe?{saborDe:String(i.saborDe).slice(0,120)}:{})}); }
   if(!itens.length) return erro("coloque ao menos um produto com preço");
   // avisos (não bloqueiam): outra promoção no mesmo período com o mesmo produto, preço acima do normal ou abaixo do custo
   const avisos=[], P=lerProdutosBling().porId, idx=_indicePrecosTabela();
