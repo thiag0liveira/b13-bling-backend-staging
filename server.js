@@ -1124,6 +1124,7 @@ app.post("/api/comprovante-arquivo/:id", rateLimit({janelaMs:60000,max:80,prefix
   out.on("finish",()=>{
     if(encerrado) return; encerrado=true;
     if(!bytes){ fs.unlink(caminho,()=>{}); return res.status(400).json({erro:"O arquivo chegou vazio."}); }
+    { let gravado=-1; try{ gravado=fs.statSync(caminho).size; }catch(e){} if(gravado!==bytes){ fs.unlink(caminho,()=>{}); return res.status(500).json({erro:`O arquivo não foi gravado por completo no servidor (${gravado} de ${bytes} bytes). Tente de novo.`}); } } // só responde "ok" se o arquivo está inteiro no disco
     const url=`/comprovantes/${nomeArq}`;
     addLog(idPed,evento,funcionarioId,funcionarioNome,{tipo,url,mime:mime||null,bytes});
     res.json({ok:true,url,tipo,bytes});
@@ -4539,6 +4540,18 @@ app.get("/api/saude/disco",requireSessao,(req,res)=>{
       ultimosApagados:(()=>{ try{ return fs.readFileSync(COMPROV_APAGADOS_FILE,"utf8").trim().split("\n").slice(-15).reverse().map(l=>{ try{ const o=JSON.parse(l); return {quando:new Date(o.em-3*3600e3).toISOString().slice(0,16).replace("T"," "),arquivo:o.nome,MB:MB(o.bytes),motivo:o.motivo,livrePct:o.livrePct}; }catch(e){ return null; } }).filter(Boolean); }catch(e){ return []; } })()});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
+// GRAVAÇÕES RECENTES: quantas fotos/vídeos foram enviados nos últimos dias, quantos estão no disco, quais sumiram (e por quê) e a idade do arquivo mais antigo guardado
+app.get("/api/diag/midias-recentes",requireAdmin,(req,res)=>{ try{ const dias=Math.min(60,Math.max(1,Number(req.query.dias)||3)), desde=Date.now()-dias*86400000, L=lerLog(), dh=ms=>ms?new Date(Number(ms)-3*3600e3).toISOString().slice(0,19).replace("T"," "):"", num={}; try{ _indicePedidos().lista.forEach(r=>{ num[String(r.id)]=r.numero; }); }catch(e){}
+  const porDia={}, ausentes=[]; let total=0, ok=0, bytesOk=0, videos=0, videosOk=0;
+  Object.entries(L).forEach(([pid,evs])=>(evs||[]).forEach(e=>{ if(!e||!(e.em>=desde)||!e.detalhes||!/^\/comprovantes\//.test(String(e.detalhes.url||""))) return; const nm=String(e.detalhes.url).split("/").pop(), ehV=e.detalhes.tipo==="video"; let st=null; try{ st=fs.statSync(path.join(COMPROVANTES_DIR,nm)); }catch(x){}
+    total++; if(ehV) videos++; const dia=dh(e.em).slice(0,10), o=porDia[dia]||(porDia[dia]={enviados:0,videos:0,noDisco:0,faltando:0}); o.enviados++; if(ehV) o.videos++;
+    if(st){ ok++; o.noDisco++; bytesOk+=st.size; if(ehV) videosOk++; } else { o.faltando++; const ap=_infoApagado(e.detalhes.url); ausentes.push({pedido:num[pid]||pid,tipo:e.detalhes.tipo||"",enviadoEm:dh(e.em),por:e.funcionarioNome||"",arquivo:nm,...(ap.apagadoEm?{apagadoEm:dh(ap.apagadoEm),motivo:ap.motivoApagado,livrePctNaHora:ap.livrePctNaHora}:{motivo:"sem registro de apagamento (apagado antes da versão que registra, ou o arquivo nunca chegou a ser gravado)"})}); } }));
+  const st=_statComprovantes(), antigo=st.arquivos[0]?st.arquivos[0].mtime:null, d=_discoInfo();
+  const leitura=[`Nos últimos ${dias} dia(s) foram enviados ${total} arquivo(s) (${videos} vídeo(s)); ${ok} estão no disco e ${total-ok} não.`];
+  if(total-ok>0) leitura.push(`${ausentes.filter(a=>a.apagadoEm).length} dos que faltam têm registro de apagamento (veja o motivo na lista); ${ausentes.filter(a=>!a.apagadoEm).length} sumiram sem registro.`);
+  if(antigo) leitura.push(`O arquivo mais antigo guardado agora tem ${((Date.now()-antigo)/86400000).toFixed(1)} dias: é o tempo REAL que as gravações estão ficando (o limite normal é ${COMPROV_DIAS_MANTER} dias, mas o teto de espaço de ${Math.round(_tetoComprovantesBytes()/1048576)} MB apaga os mais antigos antes disso quando o volume de gravações é grande).`);
+  if(d&&d.pctLivre<DISCO_ALVO_LIVRE_PCT) leitura.push(`O volume está com ${d.pctLivre}% livre, abaixo da meta de ${DISCO_ALVO_LIVRE_PCT}%: arquivos com mais de ${COMPROV_PROTEGER_HORAS/24} dias são apagados a cada rodada da limpeza.`);
+  res.json({ok:true,dias,total,noDisco:ok,faltando:total-ok,videos,videosNoDisco:videosOk,mbNoDisco:+(bytesOk/1048576).toFixed(1),porDia,disco:d?{livreMB:+(d.livre/1048576).toFixed(0),pctLivre:d.pctLivre}:null,arquivoMaisAntigoDias:antigo?+((Date.now()-antigo)/86400000).toFixed(1):null,leitura,ausentes:ausentes.slice(0,80)}); }catch(e){ res.status(500).json({erro:e.message}); } });
 // DIAGNÓSTICO DAS MÍDIAS DE UM PEDIDO (pelo número): cada foto/vídeo registrado, se o arquivo existe, tamanho, e quando/por que foi apagado
 app.get("/api/diag/midias-pedido/:ref",requireAdmin,(req,res)=>{ try{ const ref=String(req.params.ref||"").replace(/\D/g,""); const r=_indicePedidos().lista.find(x=>String(x.numero)===ref||String(x.id)===ref); const id=r?String(r.id):ref, ev=(lerLog()[id]||[]).filter(e=>e.detalhes&&e.detalhes.url);
   const dh=ms=>ms?new Date(Number(ms)-3*3600e3).toISOString().slice(0,19).replace("T"," "):"";
