@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>B13 — Vendas abaixo do custo</title>
+<style>
+*{box-sizing:border-box;font-family:Arial,Helvetica,sans-serif;margin:0;padding:0}
+:root{--mag:#FF0082;--bg:#0f0d24;--card:#151233;--borda:#2c2660;--muted:#9a95c9;--ok:#3ce88a;--warn:#ffd23f;--ruim:#ff8aa3}
+body{background:var(--bg);color:#fff;min-height:100vh}
+.top{background:linear-gradient(180deg,#2b2870,#262366);border-bottom:3px solid var(--mag);padding:10px 16px;display:flex;align-items:center;gap:8px;position:sticky;top:0;z-index:5;flex-wrap:wrap}
+.top img{height:34px}.top .t{font-weight:900;font-size:16px}.top .sp{flex:1}
+.btn{border:none;border-radius:9px;font-weight:800;cursor:pointer;font-size:12px;padding:8px 12px;color:#fff;display:inline-block;text-decoration:none}
+.btn-ghost{background:#1c1846;border:1px solid #3a3480}.btn-mag{background:var(--mag)}
+.wrap{padding:14px;display:grid;gap:12px;max-width:1000px;margin:0 auto}
+.card{background:var(--card);border:1px solid var(--borda);border-radius:12px;padding:13px;min-width:0}
+.muted{color:var(--muted);font-size:12px;line-height:1.45}
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.kpi{background:#120f2c;border:1px solid var(--borda);border-radius:12px;padding:11px}.kpi .v{font-size:20px;font-weight:900}.kpi .l{font-size:10.5px;color:var(--muted);font-weight:700;text-transform:uppercase;margin-top:3px}
+.chip{padding:6px 11px;border-radius:999px;border:1px solid #3a3480;background:#1c1846;font-size:12px;font-weight:800;cursor:pointer;display:inline-block;margin:0 4px 4px 0}.chip.on{background:var(--mag);border-color:var(--mag)}
+.tag{display:inline-block;font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:6px}.tag.at{background:#0d2a44;color:#7fd0ff}.tag.va{background:#3a1d4a;color:#e0a8ff}.tag.ok{background:#11352a;color:#6be3a8}.tag.dp{background:#3a2a0a;color:var(--warn)}
+.it{display:flex;gap:8px;align-items:center;padding:7px 2px;border-top:1px solid #1d1946;font-size:13px}.it .n{flex:1;min-width:0;line-height:1.35}.it .v{text-align:right;flex:none}
+.ruim{color:var(--ruim)}
+.vazio{padding:22px;text-align:center;color:var(--muted)}.spin{display:inline-block;width:18px;height:18px;border:3px solid #514c96;border-top-color:var(--mag);border-radius:50%;animation:spin .8s linear infinite;vertical-align:middle}@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+<script src="/nav.js"></script>
+</head>
+<body><script>
+  (function(){ if(!b13RequireLogin()) return; if(!b13BloquearSeSemAcesso("/vendas-abaixo-custo")) return;
+    document.addEventListener("DOMContentLoaded",function(){ const nav=document.createElement("div"); nav.innerHTML=b13RenderNav("/vendas-abaixo-custo"); document.body.insertBefore(nav,document.body.firstChild); }); })();
+</script>
+<div class="top"><img src="/logo"><div class="t">⚠️ Vendas abaixo do custo</div><div class="sp"></div><button class="btn btn-ghost" onclick="baixarCsv()">⬇️ CSV</button><button class="btn btn-mag" onclick="varrer()">🔄 Conferir pedidos antigos</button></div>
+<div class="wrap">
+  <div class="card muted">O sistema confere <b>todo pedido</b>, de atacado ou varejo, feito aqui ou só no Bling. Se algum item foi vendido por <b>menos que o custo cadastrado</b> do produto (já com o desconto do pedido), aparece aqui e no painel de Avisos. Se a venda foi autorizada de propósito, marque como dispensada. Se o preço for corrigido no Bling, o alerta se resolve sozinho.</div>
+  <div class="card"><div class="kpis" id="kpis"><div class="vazio"><span class="spin"></span></div></div>
+    <div style="margin-top:10px" id="filtros"></div><div class="muted" id="estat" style="margin-top:6px"></div></div>
+  <div id="lista"></div>
+</div>
+<script>
+const B = location.protocol.indexOf("http") === 0 ? "" : "https://app.b13bebidas.com.br";
+const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+function token() { try { return (b13GetSession() || {}).token || ""; } catch (e) { return ""; } }
+async function api(p, op) { op = op || {}; const r = await fetch(B + p, { ...op, headers: { "Content-Type": "application/json", "X-Auth-Token": token() } }); const j = await r.json().catch(() => ({})); return { ok: r.ok, j }; }
+const brl = n => "R$ " + Number(n || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const dmy = d => d ? d.split("-").reverse().join("/") : "—";
+let F = { dias: 30, canal: "", status: "abertos" }, DADOS = null;
+const qs = () => `dias=${F.dias}&canal=${encodeURIComponent(F.canal)}&status=${F.status}`;
+async function carregar() {
+  const { ok, j } = await api("/api/vendas-abaixo-custo?" + qs()); if (!ok) { document.getElementById("lista").innerHTML = `<div class="card"><div class="vazio">${esc(j.erro || "Não consegui carregar.")}</div></div>`; return; } DADOS = j; render();
+}
+function chip(grupo, v, t) { const val = typeof v === "number" ? v : "'" + String(v).replace(/['"\\]/g, "") + "'"; return `<span class="chip ${F[grupo] === v ? "on" : ""}" onclick="F.${grupo}=${val};carregar()">${t}</span>`; }
+function render() {
+  const j = DADOS, e = j.estatisticas || {};
+  document.getElementById("kpis").innerHTML = `<div class="kpi"><div class="v ${j.abertos ? "ruim" : ""}">${j.abertos}</div><div class="l">Vendas abertas</div></div><div class="kpi"><div class="v ruim">${brl(j.prejuizoAberto)}</div><div class="l">Prejuízo em aberto</div></div><div class="kpi"><div class="v">${j.total}</div><div class="l">Na lista abaixo</div></div>`;
+  document.getElementById("filtros").innerHTML = `<div class="muted" style="margin-bottom:3px">Período</div>${chip("dias", 7, "7 dias")}${chip("dias", 30, "30 dias")}${chip("dias", 90, "90 dias")}<div class="muted" style="margin:6px 0 3px">Canal</div>${chip("canal", "", "Todos")}${chip("canal", "Atacado", "Atacado")}${chip("canal", "Varejo", "Varejo")}<div class="muted" style="margin:6px 0 3px">Situação</div>${chip("status", "abertos", "Abertas")}${chip("status", "dispensados", "Dispensadas")}${chip("status", "resolvidos", "Corrigidas")}${chip("status", "todos", "Todas")}`;
+  document.getElementById("estat").innerHTML = `Pedidos conferidos desde que o servidor subiu: <b>${e.conferidosDesdeQueSubiu || 0}</b> · fila agora: ${e.filaAgora || 0} · avisos automáticos do Bling: ${e.avisosDoBlingChegando ? "✅ chegando" : "⚠️ parados (a varredura a cada 15 min cobre)"}${e.itensSemCustoCadastrado ? ` · <b>${e.itensSemCustoCadastrado}</b> item(ns) vendidos sem custo cadastrado (não dá para avaliar)` : ""}`;
+  document.getElementById("lista").innerHTML = j.vendas.length ? j.vendas.map(r => `<div class="card" style="margin-bottom:8px">
+    <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap"><div style="flex:1;min-width:200px"><b style="font-size:15px">Pedido #${esc(r.numero)}</b> <span class="tag ${r.canal.startsWith("Varejo") ? "va" : "at"}">${esc(r.canal)}</span>${r.dispensado ? ' <span class="tag dp">dispensada</span>' : r.resolvido ? ' <span class="tag ok">corrigida</span>' : ""}
+      <div class="muted">${dmy(r.data)} · ${esc(r.situacao)} · ${esc(r.cliente || "—")} · total ${brl(r.total)}</div></div><div style="text-align:right"><div class="ruim" style="font-size:18px;font-weight:900">−${brl(r.prejuizo)}</div><div class="muted">prejuízo</div></div></div>
+    ${r.itens.map(i => `<div class="it"><div class="n">${i.quantidade}× ${esc(i.nome)}</div><div class="v">vendido a <b>${brl(i.valorEfetivo)}</b><br><span class="muted">custo ${brl(i.custo)} · −${brl(i.prejuizoUn)}/un</span></div></div>`).join("")}
+    ${r.dispensado ? `<div class="muted" style="margin-top:6px">Dispensada por ${esc(r.dispensado.por || "—")}: ${esc(r.dispensado.motivo)}</div>` : r.resolvido ? `<div class="muted" style="margin-top:6px">Resolvida: ${esc(r.resolvidoMotivo || "")}</div>` : `<div style="margin-top:8px"><button class="btn btn-ghost" onclick="dispensar('${esc(r.pedidoId)}')">✔️ Dispensar (venda autorizada)</button></div>`}</div>`).join("")
+    : `<div class="card"><div class="vazio">Nenhuma venda abaixo do custo neste filtro. ✅</div></div>`;
+}
+async function dispensar(id) { const m = prompt("Por que esta venda abaixo do custo foi autorizada? (ex.: queima de estoque, cliente estratégico)"); if (!m) return; const { ok, j } = await api(`/api/vendas-abaixo-custo/${encodeURIComponent(id)}/dispensar`, { method: "POST", body: JSON.stringify({ motivo: m }) }); if (!ok) { alert(j.erro || "Não consegui."); return; } carregar(); }
+async function varrer() { const d = prompt("Conferir os pedidos de quantos dias atrás? (1 a 30)", "7"); if (!d) return; const { ok, j } = await api("/api/vendas-abaixo-custo/varrer", { method: "POST", body: JSON.stringify({ dias: Number(d) }) }); alert(ok ? j.mensagem : (j.erro || "Não consegui.")); setTimeout(carregar, 15000); }
+async function baixarCsv() { const r = await fetch(B + "/api/vendas-abaixo-custo.csv?" + qs(), { headers: { "X-Auth-Token": token() } }); if (!r.ok) { alert("Não consegui gerar o CSV."); return; } const b = await r.blob(), a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = "vendas_abaixo_do_custo.csv"; document.body.appendChild(a); a.click(); a.remove(); }
+carregar(); setInterval(carregar, 60000);
+</script>
+</body>
+</html>

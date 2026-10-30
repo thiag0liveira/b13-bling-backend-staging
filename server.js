@@ -1329,7 +1329,8 @@ window.B13_NAV_LINKS=[
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/custos",label:"💼 Custos e Folha",acoes:["acesso_custos"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/gastos-fixos",label:"📌 Gastos Fixos",acoes:["acesso_custos"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/folha",label:"👥 Folha e Pessoal",acoes:["acesso_custos"]},
-  {grupo:"NOTA FISCAL E FINANCEIRO",href:"/contas-bancarias",label:"🏦 Contas e Movimentação",acoes:["acesso_contas_pagar"]},
+    {grupo:"NOTA FISCAL E FINANCEIRO",href:"/contas-bancarias",label:"🏦 Contas e Movimentação",acoes:["acesso_contas_pagar"]},
+  {grupo:"NOTA FISCAL E FINANCEIRO",href:"/vendas-abaixo-custo",label:"⚠️ Vendas abaixo do custo",acoes:["acesso_custos"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/taxas-cartao",label:"💳 Taxas de Cartão",acoes:["acesso_custos"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/gestao-nfce",label:"🧾 Gestão de NFC-e",acoes:["acesso_gestao_nfce"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/gestao-caixas",label:"🗃️ Gestão de Caixas",acoes:["acesso_gestao_caixas"]},
@@ -11374,6 +11375,7 @@ function _processarAvisoBling(ev){
         if(sit===SIT.ATENDIDO){ _supAtd.mapa[id]={t:h.porId[id].t,d:h.porId[id].d}; _supAtd.ids.add(id); } else if(_supAtd.mapa[id]){ delete _supAtd.mapa[id]; _supAtd.ids.delete(id); } _whSujo.atd=true; }
       // itens (pedido novo ou alterado): busca o detalhe pela fila lenta, só se não for pedido do próprio sistema
       const doSistema=Object.values(lerPropostas()||{}).some(p=>String(p?.pedidoBlingId)===id); if(!doSistema){ _detPendentes.add(id); setTimeout(_buscarDetalhesAvisados,3000); }
+      try{ _agendarConferenciaCusto(id); }catch(e){} // venda abaixo do custo (qualquer pedido, até o feito só no Bling)
     }
     _whSujo.hist=true; _histMem=h; _idxPed.em=0; _idxCli.em=0; _supPainelCache.em=0; _metProdCache.clear();
     try{ _supAvisar("pedido"); }catch(e){}
@@ -13569,6 +13571,60 @@ app.post("/api/custos/ficha/:fid",requireAcesso("acesso_custos"),(req,res)=>{
     salvarJSON(CUSTOS_FICHAS_FILE,fichas); addLog("funcionario-"+f.id,"ficha_de_custo",req.sessao?.funcionarioId||"",quem,{funcionario:f.nome,custoMensal:_round2(valores.salario+valores.encargos+valores.beneficios+valores.provisao)});
     res.json({ok:true,valores,custoMensal:_round2(valores.salario+valores.encargos+valores.beneficios+valores.provisao),ficha:fichas[f.id]});
   }catch(e){ res.status(500).json({erro:e.message}); } });
+// ===================== VENDA ABAIXO DO CUSTO =====================
+// Confere QUALQUER pedido (atacado, varejo, feito no sistema ou só no Bling): se algum item foi vendido por menos do que o custo cadastrado do produto, gera aviso e registra o prejuízo.
+// Quando confere: a cada aviso do Bling de pedido novo/alterado (webhook) e numa varredura periódica dos últimos dias (pega o que o aviso perder, ou se os avisos estiverem parados).
+const ABAIXO_CUSTO_FILE=`${DATA_DIR}/vendas_abaixo_custo.json`;
+function lerAbaixoCusto(){ const d=lerJSON(ABAIXO_CUSTO_FILE,null)||{}; d.porId||={}; d.checados||={}; return d; }
+function _salvarAbaixoCusto(d){ const ks=Object.keys(d.checados); if(ks.length>20000) ks.sort((a,b)=>d.checados[a].em-d.checados[b].em).slice(0,ks.length-15000).forEach(k=>delete d.checados[k]); salvarJSON(ABAIXO_CUSTO_FILE,d); }
+function _canalDaVenda(id,ped){ if(Object.values(lerPropostas()||{}).some(p=>String(p&&p.pedidoBlingId)===String(id))) return "Atacado (sistema)"; return /consumidor\s*final/i.test(String(ped&&ped.contato&&ped.contato.nome||""))?"Varejo":"Atacado (Bling)"; }
+function _resolverAvisosAbaixoCusto(id,por){ try{ const A=lerAvisos(); let n=0; (A.lista||[]).forEach(a=>{ if(!a.resolvido&&String(a.fingerprint||"").startsWith(`abaixocusto-${id}-`)){ a.resolvido=true; a.resolvidoEm=Date.now(); a.resolvidoPor=por; n++; } }); if(n) salvarAvisos(A); }catch(e){} }
+let _acCont={conferidos:0,alertas:0,semCusto:0,erros:0,ultimoEm:0}; const _acFila=new Set(); let _acRodando=false;
+async function _conferirPedidoAbaixoCusto(id,origem){
+  id=String(id); const D=lerAbaixoCusto(); let ped=null;
+  try{ ped=(await blingLento(`/pedidos/vendas/${id}`))?.data; }catch(e){ if(e&&e.status===404&&D.porId[id]&&!D.porId[id].resolvido){ Object.assign(D.porId[id],{resolvido:true,resolvidoEm:Date.now(),resolvidoMotivo:"pedido excluído"}); _resolverAvisosAbaixoCusto(id,"sistema (pedido excluído)"); _salvarAbaixoCusto(D); } throw e; }
+  if(!ped) return null; const sit=Number(ped.situacao&&ped.situacao.id)||0, r=D.porId[id], agora=Date.now();
+  D.checados[id]={em:agora,total:Number(ped.total)||0,sit};
+  if(sit===SIT.CANCELADO){ if(r&&!r.resolvido){ Object.assign(r,{resolvido:true,resolvidoEm:agora,resolvidoMotivo:"pedido cancelado"}); _resolverAvisosAbaixoCusto(id,"sistema (pedido cancelado)"); } _salvarAbaixoCusto(D); return null; }
+  const P=lerProdutosBling().porId, itens=ped.itens||[], soma=itens.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.valor)||0),0), dv=Number(ped.desconto&&ped.desconto.valor)||0, desc=(ped.desconto&&ped.desconto.unidade==="PERCENTUAL")?soma*dv/100:dv, fator=soma>0?Math.max(0,(soma-desc)/soma):1;
+  const achados=[]; let semCusto=0, avaliados=0;
+  itens.forEach(it=>{ const q=Number(it.quantidade)||0, v=Number(it.valor)||0; if(!(q>0)||!(v>0)) return; /* brinde/bonificação (valor 0) não entra */ const pid=String(it.produto&&it.produto.id||""), x=P[pid], custo=x?Number(x.pc)||0:0; if(!(custo>0)){ semCusto++; return; } avaliados++;
+    const vEf=_round2(v*fator); if(vEf<custo-0.005) achados.push({produtoId:pid,nome:String(it.descricao||(x&&x.n)||"").slice(0,90),quantidade:q,valor:_round2(v),valorEfetivo:vEf,custo:_round2(custo),prejuizoUn:_round2(custo-vEf),prejuizo:_round2((custo-vEf)*q)}); });
+  _acCont.conferidos++; _acCont.semCusto+=semCusto; _acCont.ultimoEm=agora;
+  if(!achados.length){ if(r&&!r.resolvido){ Object.assign(r,{resolvido:true,resolvidoEm:agora,resolvidoMotivo:"preço ou custo corrigido"}); _resolverAvisosAbaixoCusto(id,"sistema (corrigido)"); } _salvarAbaixoCusto(D); return null; }
+  const prejuizo=_round2(achados.reduce((a,i)=>a+i.prejuizo,0)), sig=crypto.createHash("sha1").update(JSON.stringify(achados.map(i=>[i.produtoId,i.quantidade,i.valor,i.custo]))).digest("hex").slice(0,8), canal=_canalDaVenda(id,ped);
+  const novo=!r||r.resolvido||r.sig!==sig;
+  D.porId[id]={pedidoId:id,numero:ped.numero,data:String(ped.data||"").slice(0,10),situacao:nomeSituacao(sit),cliente:String(ped.contato&&ped.contato.nome||"").slice(0,80),canal,total:Number(ped.total)||0,itens:achados,prejuizo,semCusto,avaliados,sig,
+    detectadoEm:(r&&!r.resolvido&&r.detectadoEm)||agora,atualizadoEm:agora,origem:origem||"conferência automática",resolvido:false,dispensado:(r&&r.dispensado&&r.sig===sig)?r.dispensado:null};
+  if(D.porId[id].dispensado){ _salvarAbaixoCusto(D); return D.porId[id]; }
+  if(novo){ _acCont.alertas++; try{ addLog(id,"venda_abaixo_do_custo",null,"sistema",{prejuizo,itens:achados.slice(0,8).map(i=>`${i.quantidade}x ${i.nome}: vendeu a ${i.valorEfetivo}, custo ${i.custo}`)});
+      const resumo=achados.slice(0,6).map(i=>`${i.quantidade}x ${i.nome}: vendido a R$ ${i.valorEfetivo.toFixed(2)} (custo R$ ${i.custo.toFixed(2)}, prejuízo R$ ${i.prejuizo.toFixed(2)})`).join("\n")+(achados.length>6?`\n… e mais ${achados.length-6} item(ns)`:"");
+      registrarAviso({tipo:"venda_abaixo_do_custo",titulo:`Venda abaixo do custo — pedido #${ped.numero} (${canal}${D.porId[id].cliente?" · "+D.porId[id].cliente:""}): prejuízo de R$ ${prejuizo.toFixed(2)}`,pedidoId:id,numero:ped.numero,origem:D.porId[id].origem,fingerprint:`abaixocusto-${id}-${sig}`,
+        oQueFazer:`${resumo}\nConfira o preço do pedido no Bling ou, se a venda foi autorizada de propósito (queima de estoque, por exemplo), marque como "dispensado" na tela Vendas abaixo do custo. Se o custo cadastrado do produto estiver errado, corrija o custo.`}); }catch(e){ console.error("[abaixo do custo]",e.message); } }
+  _salvarAbaixoCusto(D); return D.porId[id]; }
+function _agendarConferenciaCusto(id){ id=String(id||""); if(!id) return; _acFila.add(id); setTimeout(_rodarFilaAbaixoCusto,2500); } // o Set já junta avisos repetidos do mesmo pedido enquanto ele espera na fila; toda mudança nova é reconferida
+async function _rodarFilaAbaixoCusto(){ if(_acRodando) return; _acRodando=true; try{ while(_acFila.size){ const id=_acFila.values().next().value; _acFila.delete(id); try{ await _conferirPedidoAbaixoCusto(id); }catch(e){ _acCont.erros++; } await sleep(1200); } } finally{ _acRodando=false; } }
+// varredura dos últimos dias: confere o que ainda não foi conferido ou que mudou de total/situação desde a última conferência
+async function _varrerAbaixoCusto(dias){ dias=Math.min(30,Math.max(1,Number(dias)||2)); const D=lerAbaixoCusto(); let janela=0, paraConferir=0;
+  for(let k=0;k<dias;k++){ const dia=_diaBRk(Date.now()-k*86400000);
+    for(let pag=1;pag<=10;pag++){ let r; try{ r=await blingLento(`/pedidos/vendas?dataInicial=${dia}&dataFinal=${dia}&pagina=${pag}&limite=100`); }catch(e){ break; } const L=r&&r.data||[];
+      L.forEach(p=>{ janela++; const id=String(p.id), c=D.checados[id], sit=Number(p.situacao&&p.situacao.id)||0; if(sit===SIT.CANCELADO&&!(D.porId[id]&&!D.porId[id].resolvido)) return; if(!c||Math.abs((c.total||0)-(Number(p.total)||0))>0.009||c.sit!==sit){ _acFila.add(id); paraConferir++; } });
+      if(L.length<100) break; await sleep(500); } }
+  _rodarFilaAbaixoCusto(); return {dias,pedidosNaJanela:janela,paraConferir}; }
+setTimeout(()=>{ _varrerAbaixoCusto(2).catch(()=>{}); },120000); setInterval(()=>{ _varrerAbaixoCusto(2).catch(()=>{}); },15*60000);
+const _permAbaixo=requireAcesso("acesso_custos");
+function _filtrarAbaixoCusto(q){ const D=lerAbaixoCusto(), dias=Math.min(365,Math.max(1,Number(q.dias)||30)), desde=_diaBRk(Date.now()-(dias-1)*86400000), st=String(q.status||"abertos"), canal=String(q.canal||"");
+  const L=Object.values(D.porId).filter(r=>r.data>=desde&&(!canal||r.canal.startsWith(canal))&&(st==="todos"||(st==="abertos"?(!r.resolvido&&!r.dispensado):(st==="dispensados"?!!r.dispensado:(st==="resolvidos"?!!r.resolvido:true))))).sort((a,b)=>(b.data||"").localeCompare(a.data||"")||b.prejuizo-a.prejuizo); return {D,L,dias}; }
+app.get("/api/vendas-abaixo-custo",_permAbaixo,(req,res)=>{ try{ const {L,dias}=_filtrarAbaixoCusto(req.query); const ab=L.filter(r=>!r.resolvido&&!r.dispensado);
+  res.json({ok:true,dias,total:L.length,abertos:ab.length,prejuizoAberto:_round2(ab.reduce((a,r)=>a+r.prejuizo,0)),prejuizoListado:_round2(L.reduce((a,r)=>a+r.prejuizo,0)),
+    estatisticas:{conferidosDesdeQueSubiu:_acCont.conferidos,alertasGerados:_acCont.alertas,itensSemCustoCadastrado:_acCont.semCusto,errosDeConsulta:_acCont.erros,ultimaConferenciaEm:_acCont.ultimoEm||null,filaAgora:_acFila.size,avisosDoBlingChegando:_webhookAtivo("order.")},vendas:L.slice(0,300)}); }catch(e){ res.status(500).json({erro:e.message}); } });
+app.get("/api/vendas-abaixo-custo.csv",_permAbaixo,(req,res)=>{ try{ const {L}=_filtrarAbaixoCusto(req.query), q=x=>`"${String(x==null?"":x).replace(/"/g,'""')}"`, n=x=>String(Number(x||0).toFixed(2)).replace(".",","), dm=d=>String(d||"").split("-").reverse().join("/"); const linhas=[["Data","Pedido","Canal","Cliente","Situação","Produto","Qtd","Vendido por (un)","Custo (un)","Prejuízo (un)","Prejuízo (item)","Status"].map(q).join(";")];
+  L.forEach(r=>r.itens.forEach(i=>linhas.push([dm(r.data),r.numero,r.canal,r.cliente,r.situacao,i.nome,i.quantidade,n(i.valorEfetivo),n(i.custo),n(i.prejuizoUn),n(i.prejuizo),r.dispensado?"dispensado":(r.resolvido?"resolvido":"aberto")].map(q).join(";"))));
+  res.set("Content-Type","text/csv; charset=utf-8"); res.set("Content-Disposition",'attachment; filename="vendas_abaixo_do_custo.csv"'); res.send("\ufeff"+linhas.join("\r\n")); }catch(e){ res.status(500).send(e.message); } });
+app.post("/api/vendas-abaixo-custo/:id/dispensar",_permAbaixo,(req,res)=>{ try{ const id=String(req.params.id), D=lerAbaixoCusto(), r=D.porId[id]; if(!r) return res.status(404).json({erro:"venda não encontrada"}); const motivo=String(req.body&&req.body.motivo||"").trim().slice(0,200); if(motivo.length<3) return res.status(400).json({erro:"explique o motivo (ex.: queima de estoque autorizada pelo dono)"});
+  r.dispensado={em:Date.now(),por:req.sessao&&req.sessao.nome||"",motivo}; _resolverAvisosAbaixoCusto(id,`${r.dispensado.por||"—"} (dispensado: ${motivo})`); addLog(id,"venda_abaixo_do_custo_dispensada",req.sessao&&req.sessao.id||null,r.dispensado.por,{motivo}); _salvarAbaixoCusto(D); res.json({ok:true}); }catch(e){ res.status(500).json({erro:e.message}); } });
+app.post("/api/vendas-abaixo-custo/varrer",_permAbaixo,async(req,res)=>{ try{ const dias=Math.min(30,Math.max(1,Number(req.body&&req.body.dias)||7)); _varrerAbaixoCusto(dias).catch(e=>console.error("[varredura abaixo do custo]",e.message)); res.json({ok:true,mensagem:`Conferindo os pedidos dos últimos ${dias} dia(s) em segundo plano. Atualize a tela em alguns minutos.`}); }catch(e){ res.status(500).json({erro:e.message}); } });
+app.get("/vendas-abaixo-custo",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"vendas-abaixo-custo.html")); });
 // ===================== PROMOÇÕES =====================
 // Cada promoção tem período (início + dias, o último dia vale inteiro), produtos e, por produto, o preço e onde vale (atacado, varejo ou os dois).
 // O preço promocional entra na HORA em que o item é colocado no pedido (buscas das telas de venda): pedido já criado mantém o valor que foi gravado nele.
