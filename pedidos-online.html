@@ -1026,7 +1026,9 @@ async function verDetalhe(id) {
     return '<div style="font-size:12px;color:#8fffc0">• ' + esc(x) + '</div>';
   }).join("") + '</div>' : '') + ((alt.alterados || []).length ? '<div style="background:#2a2410;border:1px solid #6b5f1f;border-radius:8px;padding:8px">' + '<div style="color:#ffd23f;font-weight:800;font-size:12px;margin-bottom:4px">🔄 Quantidade alterada</div>' + alt.alterados.map(function (x) {
     return '<div style="font-size:12px;color:#ffe89a">• ' + esc(x) + '</div>';
-  }).join("") + '</div>' : '') + '</div>' : '<div class="muted" style="border-top:1px solid #2a2660;margin-top:8px;padding-top:8px;font-size:12px">Nenhuma alteração neste pedido.</div>') + '<button class="btn btn-ghost" onclick="fechar()">Fechar</button></div></div>';
+  }).join("") + '</div>' : '') + (((alt.estornos || []).length || alt.estornoPendente) ? '<div style="background:#2a1d3a;border:1px solid #7a4cc2;border-radius:8px;padding:8px;margin-top:6px"><div style="color:#d3b3ff;font-weight:800;font-size:12px;margin-bottom:4px">↩️ Devolvido ao cliente</div>' + (alt.estornos || []).map(function (e) {
+    return '<div style="font-size:12px;color:#e8d7ff">• ' + brl(e.valor) + ' · ' + esc(e.rotulo || e.forma) + ' · ' + new Date(e.em).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) + (e.por ? ' · autorizado por ' + esc(e.por) : '') + '</div>';
+  }).join("") + (alt.estornoPendente ? '<div style="font-size:12px;color:#ffd23f;margin-top:4px">⏳ Falta devolver ' + brl(alt.estornoPendente.valor) + '</div>' : '') + '</div>' : '') + '</div>' : '<div class="muted" style="border-top:1px solid #2a2660;margin-top:8px;padding-top:8px;font-size:12px">Nenhuma alteração neste pedido.</div>') + '<button class="btn btn-ghost" onclick="fechar()">Fechar</button></div></div>';
 }
 // vídeo da conferência que não abre: diz se o arquivo foi apagado pela limpeza automática ou se o aparelho não toca o formato
 function videoSemArquivo(v) {

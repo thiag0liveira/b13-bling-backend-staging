@@ -159,6 +159,7 @@ let FORMAS = [];
 let PAGAMENTOS = [];
 let ULTIMO_ITEM_PAINEL = null; // painel grande: logo ou último produto adicionado
 let MODO_PRECO = "atacado"; // 'atacado' (padrão) ou 'varejo' (preço do Bling + lógica de fardo)
+let RECEBIMENTO = null, ITENS_ORIGINAIS = [], ESTORNO_EDICAO = null; // o que o cliente já pagou, itens ao reabrir e o estorno escolhido
 let MODO_EDICAO_PAGAMENTO = false; // true = editando o pagamento de um pedido já finalizado (com QR de gerente/admin)
 let TOKEN_EDICAO = ""; // QR autorizador guardado só em memória durante a edição (nunca salvo)
 let AUTORIZADO_POR = ""; // nome de quem autorizou (só pra exibir)
@@ -1065,6 +1066,9 @@ async function abrirPedidoParaEdicao(id) {
     PAGAMENTOS = [];
     ULTIMO_ITEM_PAINEL = null;
     MODO_EDICAO_PAGAMENTO = true;
+    RECEBIMENTO = j.recebimento || null;
+    ITENS_ORIGINAIS = (j.itens || []).map(i => ({ produtoId: i.produtoId, quantidade: Number(i.quantidade) }));
+    ESTORNO_EDICAO = null;
     window._obsVenda = j.obsImpressa || ""; // observação impressa na nota (guardada no sistema, não no Bling)
     window._filtroPed = "";
     render();
@@ -1074,12 +1078,67 @@ async function abrirPedidoParaEdicao(id) {
     MODO_EDICAO_PAGAMENTO = false;
   }
 }
+// ---- reabertura de pedido JÁ PAGO com item retirado: o que passa do novo total volta ao cliente (estorno) ----
+function itensMudaramNaReabertura() {
+  const mapa = l => { const m = {}; (l || []).forEach(i => { m[String(i.produtoId)] = (m[String(i.produtoId)] || 0) + Number(i.quantidade || 0); }); return m; };
+  const A = mapa(ITENS_ORIGINAIS), Bm = mapa(CARRINHO);
+  return Object.keys({ ...A, ...Bm }).some(k => Math.abs((A[k] || 0) - (Bm[k] || 0)) > 0.0005);
+}
+function devidoNaReabertura() {
+  if (!MODO_EDICAO_PAGAMENTO || !RECEBIMENTO || !itensMudaramNaReabertura()) return 0;
+  const d = +(Number(RECEBIMENTO.liquido || 0) - totalPedido()).toFixed(2);
+  return d > 0.05 ? d : 0;
+}
+async function abrirDevolucao(devido) {
+  let bancos = []; try { const b = await fetch(BACKEND + "/api/pix-bancos").then(r => r.json()); bancos = (b && b.bancos) || []; } catch (e) {}
+  window._devBancos = bancos.map(b => b.nome || b); window._devDevido = devido;
+  const pix = (RECEBIMENTO.linhas || []).find(p => /pix/i.test(p.formaNome || "")), bancoSug = pix ? ((/pix\s+banco\s+(.+)$/i.exec(pix.formaNome) || [])[1] || "") : "";
+  window._devLinhas = [{ forma: pix ? "pix" : "dinheiro", banco: bancoSug || window._devBancos[0] || "", valor: String(devido).replace(".", ",") }];
+  renderDevolucao();
+}
+function devSet(i, campo, v) { window._devLinhas[i][campo] = v; }
+function devAdd() { const falta = Math.max(0, +(window._devDevido - window._devLinhas.reduce((a, l) => a + (Number(String(l.valor).replace(",", ".")) || 0), 0)).toFixed(2)); window._devLinhas.push({ forma: "dinheiro", banco: window._devBancos[0] || "", valor: String(falta).replace(".", ",") }); renderDevolucao(); }
+function devDel(i) { window._devLinhas.splice(i, 1); renderDevolucao(); }
+function devResumo() {
+  const soma = +window._devLinhas.reduce((a, l) => a + (Number(String(l.valor).replace(",", ".")) || 0), 0).toFixed(2), falta = +(window._devDevido - soma).toFixed(2), depois = !!(document.getElementById("devDepois") || {}).checked, el = document.getElementById("devResumo"); if (!el) return;
+  el.innerHTML = Math.abs(falta) < 0.05 ? `<span style="color:#8fffc0">✔ Distribuído: ${brl(soma)}</span>` : falta > 0 ? `<span style="color:#ffd23f">Falta distribuir ${brl(falta)}${depois ? " (fica pendente)" : ""}</span>` : `<span style="color:#ff8090">Passou ${brl(-falta)} do valor a devolver</span>`;
+}
+function renderDevolucao() {
+  const rec = RECEBIMENTO || { linhas: [], liquido: 0 }, total = totalPedido(), devido = window._devDevido, depoisMarcado = !!(document.getElementById("devDepois") || {}).checked;
+  const rot = { dinheiro: "💵 Dinheiro da gaveta", pix: "📲 Pix", credito: "💳 Crédito para o cliente" };
+  const linhas = window._devLinhas.map((l, i) => `<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;flex-wrap:wrap">
+    <select style="flex:1;min-width:150px" onchange="devSet(${i},'forma',this.value);renderDevolucao()">${Object.entries(rot).map(([k, v]) => `<option value="${k}" ${l.forma === k ? "selected" : ""}>${v}</option>`).join("")}</select>
+    ${l.forma === "pix" ? `<select style="flex:1;min-width:120px" onchange="devSet(${i},'banco',this.value)">${window._devBancos.map(b => `<option ${b === l.banco ? "selected" : ""}>${esc(b)}</option>`).join("")}</select>` : ""}
+    <input style="width:96px" inputmode="decimal" value="${esc(l.valor)}" oninput="devSet(${i},'valor',this.value);devResumo()">
+    ${window._devLinhas.length > 1 ? `<button class="btn btn-ghost btn-sm" onclick="devDel(${i})">✕</button>` : ""}</div>`).join("");
+  document.getElementById("modais").innerHTML = `<div class="modalBg"><div class="modal"><h3>↩️ Devolver ao cliente</h3>
+    <div class="muted" style="font-size:12.5px;line-height:1.5;margin-bottom:8px">Pedido #${esc(PEDIDO_ATUAL.numero)} já pago: <b>${rec.linhas.map(p => esc(p.formaNome) + " " + brl(p.valor)).join(" · ")}</b>${rec.estornado > 0.009 ? " · já devolvido " + brl(rec.estornado) : ""}.<br>Recebido líquido <b>${brl(rec.liquido)}</b> · novo total <b>${brl(total)}</b> · produtos retirados somam <b style="color:#ffd23f">${brl(devido)}</b> a devolver.</div>
+    <div class="muted" style="font-size:12px;margin-bottom:4px">De qual meio sai a devolução</div>${linhas}
+    <button class="btn btn-ghost btn-sm" onclick="devAdd()">＋ Dividir em outro meio</button><div id="devResumo" style="margin:8px 0;font-size:13px"></div>
+    <label style="display:flex;gap:6px;align-items:center;font-size:12.5px"><input type="checkbox" id="devDepois" ${depoisMarcado ? "checked" : ""} onchange="devResumo()"> Devolver depois (fica pendente e a gerência recebe um aviso)</label>
+    <div class="muted" style="font-size:11.5px;margin-top:6px">O que o cliente pagou continua como entrada no caixa. A devolução entra como saída, com o meio escolhido, e fica no histórico do pedido.</div>
+    <div id="devMsg"></div><div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-ghost" style="flex:1" onclick="fecharModais()">Cancelar</button><button class="btn" style="flex:1" onclick="confirmarDevolucao()">Continuar (QR)</button></div></div></div>`;
+  devResumo();
+}
+function confirmarDevolucao() {
+  const msg = document.getElementById("devMsg"), depois = !!document.getElementById("devDepois").checked, devido = window._devDevido, erro = t => { msg.innerHTML = `<div class="err">${t}</div>`; };
+  const linhas = window._devLinhas.map(l => ({ forma: l.forma, banco: l.forma === "pix" ? l.banco : "", valor: Number(String(l.valor).replace(",", ".")) || 0 })).filter(l => l.valor > 0);
+  const soma = +linhas.reduce((a, l) => a + l.valor, 0).toFixed(2);
+  if (linhas.some(l => l.forma === "pix" && !l.banco)) return erro("Escolha de qual banco saiu o Pix.");
+  if (soma > devido + 0.05) return erro(`A soma (${brl(soma)}) passou do valor a devolver (${brl(devido)}).`);
+  if (!depois && Math.abs(soma - devido) > 0.05) return erro(`A soma (${brl(soma)}) precisa ser igual a ${brl(devido)}. Ou marque "Devolver depois".`);
+  ESTORNO_EDICAO = { linhas, pendente: depois && soma < devido - 0.05, soma, devido }; fecharModais(); salvarEdicaoPagamento();
+}
 // ---- salvar novo pagamento: QR de novo no FINAL ----
 function salvarEdicaoPagamento() {
   var _PEDIDO_ATUAL;
   const msg = document.getElementById("msgFinalizar");
-  const linhas = PAGAMENTOS.filter(p => p.formaId && Number(p.valor) > 0);
-  if (!linhas.length) {
+  const devidoEst = devidoNaReabertura();
+  if (ESTORNO_EDICAO && !ESTORNO_EDICAO.pendente && Math.abs(ESTORNO_EDICAO.soma - devidoEst) > 0.05) ESTORNO_EDICAO = null; // mudou o carrinho depois de escolher: escolhe de novo
+  if (devidoEst > 0.05 && !ESTORNO_EDICAO) { abrirDevolucao(devidoEst); return; }
+  const modoEst = devidoEst > 0.05 && !!ESTORNO_EDICAO; // o recebido fica como está; só se informa o estorno
+  const linhas = modoEst ? [] : PAGAMENTOS.filter(p => p.formaId && Number(p.valor) > 0);
+  if (!linhas.length && !modoEst) {
     if (msg) msg.innerHTML = `<div class="err">Informe ao menos uma forma de pagamento.</div>`;
     return;
   }
@@ -1091,13 +1150,13 @@ function salvarEdicaoPagamento() {
   const ehTrocoLegitimo = difSoma > 0.009 && trocoAtual() >= difSoma - 0.01;
   // PIX Banco também pergunta o banco na correção de pagamento (antes gravava sem banco)
   if (linhas.some(p => pixSemBanco(p))) { perguntarBancosPix(); return; }
-  if (Math.abs(difSoma) >= 0.01 && !ehTrocoLegitimo && !confirm(`A soma dos pagamentos (${brl(soma)}) é diferente do total (${brl(total)}). Continuar?`)) return;
+  if (!modoEst && Math.abs(difSoma) >= 0.01 && !ehTrocoLegitimo && !confirm(`A soma dos pagamentos (${brl(soma)}) é diferente do total (${brl(total)}). Continuar?`)) return;
   const pagamentos = linhas.map(p => ({
     formaId: p.formaId,
     formaNome: /pix/i.test(p.formaNome || "") && /banco/i.test(p.formaNome || "") && p.banco && !/pix\s+banco\s+\S/i.test(p.formaNome) ? "Pix Banco " + p.banco : p.formaNome,
     valor: Number(p.valor)
   }));
-  pedirQrAcao(`💾 Confirmar novo pagamento — #${esc(((_PEDIDO_ATUAL = PEDIDO_ATUAL) === null || _PEDIDO_ATUAL === void 0 ? void 0 : _PEDIDO_ATUAL.numero) || "")}`, "Pra salvar a nova forma de pagamento, leia o QR de novo (gerente, financeiro ou admin).", async (tokenQr, campo, erroEl) => {
+  pedirQrAcao(`💾 Confirmar novo pagamento — #${esc(((_PEDIDO_ATUAL = PEDIDO_ATUAL) === null || _PEDIDO_ATUAL === void 0 ? void 0 : _PEDIDO_ATUAL.numero) || "")}`, modoEst ? `Vai retirar os itens e registrar a devolução de <b>${brl(ESTORNO_EDICAO.soma)}</b> ao cliente${ESTORNO_EDICAO.pendente ? " (o resto fica pendente)" : ""}. Leia o QR de novo (gerente, financeiro ou admin).` : "Pra salvar a nova forma de pagamento, leia o QR de novo (gerente, financeiro ou admin).", async (tokenQr, campo, erroEl) => {
     if (FINALIZANDO) return; // trava contra clique duplo no "Confirmar"
     FINALIZANDO = true;
     try {
@@ -1132,10 +1191,12 @@ function salvarEdicaoPagamento() {
           tokenQr,
           funcionarioId: S.id,
           frete: FRETE,
-          troco: trocoAtual()
+          troco: modoEst ? 0 : trocoAtual(),
+          ...(modoEst ? { estornos: ESTORNO_EDICAO.linhas, estornoPendente: !!ESTORNO_EDICAO.pendente } : {})
         })
       }).then(r => r.json());
       if (resp.erro) throw new Error(resp.erro);
+      ESTORNO_EDICAO = null;
       if (campo) campo.value = "";
       FINALIZANDO = false;
       const ia = resp.itensAlterados;
@@ -1151,7 +1212,7 @@ function salvarEdicaoPagamento() {
               <span class="muted">Pagamento de:</span> ${esc(resp.de || "—")}<br>
               <span class="muted">Para:</span> ${esc(resp.para || "—")}<br>
               <span class="muted">Autorizado por:</span> ${esc(resp.autorizadoPor || AUTORIZADO_POR || "—")}</div>
-            ${iaMsg}${estMsg}${repMsg}
+            ${iaMsg}${estMsg}${repMsg}${(() => { const eo = resp.estorno; if (!eo) return ""; const rotE = r => r.forma === "pix" ? "por Pix (" + esc(r.banco) + ")" : r.forma === "credito" ? "como crédito para o cliente" : "em dinheiro da gaveta"; return `<div style="margin-top:10px;padding:8px;background:#2a1d3a;border:1px solid #7a4cc2;border-radius:8px;font-size:12px;text-align:left;color:#e8d7ff">↩️ <b>Devolvido ao cliente</b> (já tinha pago ${brl(eo.recebidoLiquido)}, novo total ${brl(eo.novoTotal)})${(eo.registrados || []).map(r => "<br>" + brl(r.valor) + " " + rotE(r)).join("")}${eo.pendente ? `<br>⏳ <b>Falta devolver ${brl(eo.pendente)}</b> (a gerência foi avisada)` : ""}${(eo.falhas || []).length ? "<br>⚠️ " + esc(eo.falhas.join("; ")) : ""}</div>`; })()}
             ${resp.incluidoNoCaixa ? `<div style="margin-top:10px;padding:8px;background:#2a2410;border:1px solid #6b5f1f;border-radius:8px;color:#ffd23f;font-size:12px;text-align:left">⚠️ Este pedido não estava em nenhum caixa do sistema. Foi <b>incluído no caixa atual</b> (${esc(resp.incluidoNoCaixa.operador || "você")}).</div>` : ""}
             <button class="btn" style="width:100%;margin-top:14px" onclick="fecharModais();novaVenda();carregarPedidos();carregarSessao().then(render)">OK</button>
           </div></div>`;
@@ -2093,6 +2154,7 @@ function render() {
           ${CLIENTE_NOME ? `<div class="muted">👤 Cliente: <b style="color:#cfc9f5">${esc(CLIENTE_NOME)}</b></div>` : ''}
           ${PEDIDO_ATUAL.recebidoNaEntrega ? `<div style="margin-top:8px;padding:8px 10px;background:#0f2a1f;border:1px solid #2f9e6b;border-radius:8px;font-size:12px;color:#bff5d9">🛵 <b>Entregue e recebido pelo ${PEDIDO_ATUAL.recebidoNaEntrega.peloEscritorio ? "escritório" : "motorista"}${PEDIDO_ATUAL.recebidoNaEntrega.motorista ? " " + esc(PEDIDO_ATUAL.recebidoNaEntrega.motorista) : ""}</b>${PEDIDO_ATUAL.recebidoNaEntrega.em ? " em " + new Date(PEDIDO_ATUAL.recebidoNaEntrega.em).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}: ${PEDIDO_ATUAL.recebidoNaEntrega.formas.map(f => esc(f.formaNome) + (f.banco ? " (" + esc(f.banco) + ")" : "") + " " + brl(f.valor)).join(" · ")}.<br>Aqui você só registra no caixa o que veio da rua. O pedido vai direto para <b>Atendido</b>, sem passar pela separação.</div>` : (PEDIDO_ATUAL.entregue ? `<div style="margin-top:8px;padding:8px 10px;background:#1c1846;border:1px solid #3a3480;border-radius:8px;font-size:12px">🛵 Pedido já entregue: ao finalizar, vai direto para <b>Atendido</b>.</div>` : '')}
           ${MODO_EDICAO_PAGAMENTO ? `<div style="margin-top:8px;padding:8px;background:#2a0f14;border:1px solid #6b1f24;border-radius:8px;font-size:12px;color:#ff9aa2">✏️ <b>Pedido reaberto</b>. Autorizado por ${esc(AUTORIZADO_POR || "—")}. Como ele já foi finalizado, ao salvar o sistema <b>estorna o estoque, aplica as mudanças e lança de novo</b> automaticamente. Pode <b>retirar/alterar itens</b> e escolher a nova forma de pagamento — tudo que mudar fica registrado no histórico (caixa, Bling e Central).</div>` : ""}
+          ${MODO_EDICAO_PAGAMENTO && RECEBIMENTO && RECEBIMENTO.bruto > 0 ? `<div style="margin-top:6px;padding:8px;background:#1d1a3a;border:1px solid #3a3480;border-radius:8px;font-size:12px;color:#cfc9f5">💰 <b>Já recebido:</b> ${RECEBIMENTO.linhas.map(p => esc(p.formaNome) + " " + brl(p.valor)).join(" · ")}${RECEBIMENTO.troco > 0.009 ? " · troco " + brl(RECEBIMENTO.troco) : ""}${RECEBIMENTO.estornado > 0.009 ? " · já devolvido " + brl(RECEBIMENTO.estornado) : ""} <b>= ${brl(RECEBIMENTO.liquido)}</b>. Se o novo total ficar menor, a diferença é <b>devolvida ao cliente</b> (estorno) e fica registrada no caixa e no histórico.${RECEBIMENTO.pendente ? ` <b style="color:#ffd23f">⏳ Falta devolver ${brl(RECEBIMENTO.pendente.valor)} de uma reabertura anterior.</b>` : ""}</div>` : ""}
         </div>` : `<h3 style="margin-bottom:8px">🛒 Nova venda</h3>`}
         <div class="muted" style="margin-bottom:6px">💰 Modo de preço desta venda</div>
         <div style="display:flex;gap:8px;margin-bottom:12px">
