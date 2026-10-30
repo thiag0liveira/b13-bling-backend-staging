@@ -13528,16 +13528,20 @@ let _promoCache={t:0,mapa:null};
 function _mapaPromoAtivo(){ // produtoId -> {atacado:{preco,promoId,nome,fim}, varejo:{...}}; em memória por poucos segundos
   if(_promoCache.mapa&&Date.now()-_promoCache.t<4000) return _promoCache.mapa;
   const hoje=_promoHojeBR(), M={}; lerPromocoes().lista.filter(p=>_statusPromocao(p,hoje)==="ativa").sort((a,b)=>(a.criadoEm||0)-(b.criadoEm||0)).forEach(p=>(p.itens||[]).forEach(i=>{
-    const id=String(i.produtoId), o=M[id]||(M[id]={}), v={preco:Number(i.preco),promoId:p.id,nome:p.nome,fim:p.fim};
-    if(i.aplica==="atacado"||i.aplica==="ambos") o.atacado=v; if(i.aplica==="varejo"||i.aplica==="ambos") o.varejo=v; })); // a mais recente vale quando há duas ativas
+    const v={preco:Number(i.preco),promoId:p.id,nome:p.nome,fim:p.fim}, cod=String(i.codigo||"").trim().toUpperCase(), nm=_promoNrm(i.nome);
+    // chaves: id do produto, código e nome. O cadastro pode ter o mesmo produto duas vezes (outro id): a promoção vale para todos os que têm o mesmo código ou o mesmo nome
+    [String(i.produtoId),cod?("c:"+cod):null,nm?("n:"+nm):null].filter(Boolean).forEach(k=>{ const o=M[k]||(M[k]={});
+      if(i.aplica==="atacado"||i.aplica==="ambos") o.atacado=v; if(i.aplica==="varejo"||i.aplica==="ambos") o.varejo=v; }); })); // a mais recente vale quando há duas ativas
   _promoCache={t:Date.now(),mapa:M}; return M; }
 const _promoInvalida=()=>{ _promoCache={t:0,mapa:null}; };
-function _promoDoProduto(produtoId,modo){ const o=_mapaPromoAtivo()[String(produtoId)]; return (o&&o[modo==="varejo"?"varejo":"atacado"])||null; }
+function _promoDoProduto(produtoId,modo,ref){ const M=_mapaPromoAtivo(), m=modo==="varejo"?"varejo":"atacado"; let r=ref;
+  if(!r){ const x=lerProdutosBling().porId[String(produtoId)]; if(x) r={codigo:x.c,nome:x.n}; }
+  const o=M[String(produtoId)]||(r&&r.codigo&&M["c:"+String(r.codigo).trim().toUpperCase()])||(r&&r.nome&&M["n:"+_promoNrm(r.nome)])||null; return (o&&o[m])||null; }
 // aplica a promoção ao item devolvido por uma busca: o preço efetivo muda e o original fica guardado
-function _promoAplicaNoItem(p,idProd,opc){ try{ const pa=_promoDoProduto(idProd,"atacado"), pv=_promoDoProduto(idProd,"varejo"); if(!pa&&!pv) return p;
+function _promoAplicaNoItem(p,idProd,opc){ try{ const ref={codigo:p.codigo,nome:p.nome}, pa=_promoDoProduto(idProd,"atacado",ref), pv=_promoDoProduto(idProd,"varejo",ref); if(!pa&&!pv) return p;
     p.promocao={nome:(pa||pv).nome,fim:(pa||pv).fim,atacado:pa?pa.preco:null,varejo:pv?pv.preco:null};
     if(opc&&opc.campos==="atacadoBling"){ // /api/buscar-atacado: precoAtacado, precoBling e preco
-      if(pa){ p.precoAtacadoOriginal=p.precoAtacado??null; p.precoAtacado=pa.preco; p.preco=pa.preco; }
+      if(pa){ p.precoAtacadoOriginal=p.precoAtacado??null; p.precoAtacado=pa.preco; p.preco=pa.preco; if(p.precoFardo!=null&&pa.preco<Number(p.precoFardo)){ p.precoFardoOriginal=p.precoFardo; p.precoFardo=pa.preco; } } // o botão "+ Fardo" também leva o preço da promoção quando ele é menor que o de fardo da tabela
       if(pv){ p.precoBlingOriginal=p.precoBling??null; p.precoBling=pv.preco; if(!pa&&!(p.precoAtacado>0)){ p.preco=pv.preco; } } }
     else { const alvo=(opc&&opc.modo==="atacado")?pa:pv; if(alvo){ p.precoOriginal=p.preco??null; p.preco=alvo.preco; if(opc&&opc.modo==="atacado"){ p.precoAtacadoOriginal=p.precoAtacado??null; p.precoAtacado=alvo.preco; } } else delete p.promocao; }
   }catch(e){} return p; }
@@ -13569,6 +13573,16 @@ function _promoVista(p,hoje){ return {...p,status:_statusPromocao(p,hoje),qtdPro
 app.get("/api/promocoes",_permPromo,(req,res)=>{ try{ const hoje=_promoHojeBR(), ordem={ativa:0,agendada:1,encerrada:2,cancelada:3};
   const L=lerPromocoes().lista.map(p=>_promoVista(p,hoje)).sort((a,b)=>ordem[a.status]-ordem[b.status]||String(b.inicio).localeCompare(String(a.inicio)));
   res.json({ok:true,hoje,promocoes:L}); }catch(e){ res.status(500).json({erro:e.message}); } });
+app.get("/api/diag/promocao",requireAdmin,(req,res)=>{ try{ const q=_promoNrm(req.query.q||""); if(q.length<2) return res.status(400).json({erro:"informe parte do nome do produto"}); const toks=q.split(" ").filter(Boolean), hoje=_promoHojeBR(), M=_mapaPromoAtivo();
+  const casa=t=>toks.every(w=>_promoNrm(t).includes(w)); const promos=lerPromocoes().lista.map(p=>({id:p.id,nome:p.nome,status:_statusPromocao(p,hoje),inicio:p.inicio,fim:p.fim,itens:(p.itens||[]).filter(i=>casa(i.nome+" "+(i.codigo||"")))})).filter(p=>p.itens.length);
+  const idx=lerJSON(GTIN_INDEX_FILE,{}), busca=[], vistos=new Set(); Object.values(idx).forEach(p=>{ if(!p||vistos.has(String(p.produtoId))||!casa(p.nome+" "+(p.codigo||""))) return; vistos.add(String(p.produtoId)); const ref={codigo:p.codigo,nome:p.nome}, pa=_promoDoProduto(p.produtoId,"atacado",ref), pv=_promoDoProduto(p.produtoId,"varejo",ref), viaId=!!M[String(p.produtoId)];
+    busca.push({produtoId:p.produtoId,nome:p.nome,codigo:p.codigo||"",precoAtacadoComPromocao:pa?pa.preco:null,precoVarejoComPromocao:pv?pv.preco:null,casaPor:pa||pv?(viaId?"id do produto":(M["c:"+String(p.codigo||"").trim().toUpperCase()]?"código":"nome")):"nenhuma promoção ativa"}); });
+  const ativasDoProduto=promos.filter(p=>p.status==="ativa"); const leitura=[];
+  if(!promos.length) leitura.push("Nenhuma promoção (ativa, agendada ou encerrada) tem produto com esse nome."); 
+  promos.filter(p=>p.status!=="ativa").forEach(p=>leitura.push(`A promoção "${p.nome}" está ${p.status} (${p.inicio} a ${p.fim}), por isso não vale agora.`));
+  ativasDoProduto.forEach(p=>p.itens.forEach(i=>{ const m=busca.filter(b=>b.casaPor!=="nenhuma promoção ativa"); leitura.push(`Promoção ativa "${p.nome}": "${i.nome}" a R$ ${i.preco} (${i.aplica}).${m.length?` Na busca do atacado ela vale para ${m.length} entrada(s) do produto.`:" Na busca do atacado NENHUMA entrada desse produto recebe a promoção (nem por id, código ou nome)."}`); }));
+  busca.filter(b=>b.casaPor==="nenhuma promoção ativa"&&ativasDoProduto.length).forEach(b=>leitura.push(`A busca do atacado mostra "${b.nome}" (id ${b.produtoId}, código ${b.codigo||"—"}) SEM promoção: não bate com nenhum produto da promoção. Confira se é o mesmo produto e, se for, adicione-o à promoção.`));
+  res.json({ok:true,hoje,promocoes:promos,buscaDoAtacado:busca.slice(0,40),leitura}); }catch(e){ res.status(500).json({erro:e.message}); } });
 app.get("/api/promocoes/ativas",(req,res)=>{ try{ res.json({ok:true,hoje:_promoHojeBR(),produtos:_mapaPromoAtivo()}); }catch(e){ res.status(500).json({erro:e.message}); } });
 app.get("/api/promocoes/produtos",_permPromo,(req,res)=>{ try{ const q=_promoNrm(req.query.q||""); if(q.length<2) return res.json({ok:true,produtos:[]}); const toks=q.split(" ").filter(Boolean), P=lerProdutosBling().porId, idx=_indicePrecosTabela(), out=[];
   for(const [id,x] of Object.entries(P)){ if(!x||!x.n||x.s==="I"||x.s==="E") continue; const alvo=_promoNrm(x.n+" "+(x.c||"")); if(!toks.every(t=>alvo.includes(t))) continue; const vinc=idx.porCodigo[String(x.c||"")]||idx.porNome[String(x.n||"").toLowerCase().trim()]||null;
@@ -14710,7 +14724,7 @@ app.patch("/api/pedidos/:id/situacao", async (req, res) => {
 // Busca produtos com PREÇO DE ATACADO (da tabela publicada) + estoque ao vivo
 // PREÇO ATUAL de um produto para vender no atacado: o preço de atacado da tabela, se houver; senão o preço de varejo do Bling.
 // Com vivo:true confere no Bling na hora (e corrige o cadastro em cache e o preço confirmado, para as demais telas também ficarem certas).
-async function _precoAtualProduto(produtoId,opc){ const _pr=await _precoAtualProduto0(produtoId,opc); try{ const pm=_promoDoProduto(produtoId,(opc&&opc.modo)==="varejo"?"varejo":"atacado"); if(pm&&pm.preco>0&&(!(_pr.preco>0)||pm.preco<_pr.preco)){ _pr.precoNormal=_pr.preco; _pr.preco=pm.preco; _pr.promocao={nome:pm.nome,fim:pm.fim}; } }catch(e){} return _pr; }
+async function _precoAtualProduto(produtoId,opc){ const _pr=await _precoAtualProduto0(produtoId,opc); try{ const pm=_promoDoProduto(produtoId,(opc&&opc.modo)==="varejo"?"varejo":"atacado",(opc&&opc.ref)||undefined); if(pm&&pm.preco>0&&(!(_pr.preco>0)||pm.preco<_pr.preco)){ _pr.precoNormal=_pr.preco; _pr.preco=pm.preco; _pr.promocao={nome:pm.nome,fim:pm.fim}; } }catch(e){} return _pr; }
 async function _precoAtualProduto0(produtoId,opc){ const id=String(produtoId), vivo=!!(opc&&opc.vivo), P0=lerProdutosBling().porId[id]||{}, cod=String(P0.c||""), idx=_indicePrecosTabela();
   const vinc=(cod&&idx.porCodigo[cod])||idx.porNome[String(P0.n||"").toLowerCase().trim()]||null, atac=vinc&&vinc.precoAtacado!=null&&Number(vinc.precoAtacado)>0?Number(vinc.precoAtacado):null; let pb=null, aoVivo=false, nome=P0.n||"";
   if(atac==null||vivo){ try{ if(vivo){ try{ _invalidarProduto(id); }catch(e){} } /* a leitura de produto tem cache curto: conferir "na hora" exige limpá-lo */ const r=await bling(`/produtos/${id}`), v=Number(r&&r.data&&r.data.preco)||0; if(v>0){ pb=v; aoVivo=true; nome=(r.data.nome||nome); const PP=lerProdutosBling(); if(PP.porId[id]&&Number(PP.porId[id].p)!==v){ PP.porId[id].p=v; salvarJSON(PRODUTOS_BLING_FILE,PP); } _precoConfirmado.set(id,{preco:v,nome,em:Date.now()}); } }catch(e){} }
