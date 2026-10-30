@@ -159,7 +159,7 @@ let FORMAS = [];
 let PAGAMENTOS = [];
 let ULTIMO_ITEM_PAINEL = null; // painel grande: logo ou último produto adicionado
 let MODO_PRECO = "atacado"; // 'atacado' (padrão) ou 'varejo' (preço do Bling + lógica de fardo)
-let RECEBIMENTO = null, ITENS_ORIGINAIS = [], ESTORNO_EDICAO = null; // o que o cliente já pagou, itens ao reabrir e o estorno escolhido
+let RECEBIMENTO = null, ITENS_ORIGINAIS = [], ESTORNO_EDICAO = null, NFCE_ABERTA = null; // o que o cliente já pagou, itens ao reabrir e o estorno escolhido
 let MODO_EDICAO_PAGAMENTO = false; // true = editando o pagamento de um pedido já finalizado (com QR de gerente/admin)
 let TOKEN_EDICAO = ""; // QR autorizador guardado só em memória durante a edição (nunca salvo)
 let AUTORIZADO_POR = ""; // nome de quem autorizou (só pra exibir)
@@ -1067,6 +1067,7 @@ async function abrirPedidoParaEdicao(id) {
     ULTIMO_ITEM_PAINEL = null;
     MODO_EDICAO_PAGAMENTO = true;
     RECEBIMENTO = j.recebimento || null;
+    NFCE_ABERTA = j.nfce || null; // NFC-e que está valendo para o pedido (alterar o pedido não muda a nota)
     ITENS_ORIGINAIS = (j.itens || []).map(i => ({ produtoId: i.produtoId, quantidade: Number(i.quantidade) }));
     ESTORNO_EDICAO = null;
     window._obsVenda = j.obsImpressa || ""; // observação impressa na nota (guardada no sistema, não no Bling)
@@ -1178,12 +1179,7 @@ function salvarEdicaoPagamento() {
         valor: i.valor,
         modoPreco: i.modoPreco || "atacado"
       }));
-      const resp = await comTimeout(BACKEND + "/api/caixa-atacado/editar-pagamento", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
+      const corpoEd = {
           pedidoId: PEDIDO_ATUAL.id,
           numero: PEDIDO_ATUAL.numero,
           pagamentos,
@@ -1193,8 +1189,13 @@ function salvarEdicaoPagamento() {
           frete: FRETE,
           troco: modoEst ? 0 : trocoAtual(),
           ...(modoEst ? { estornos: ESTORNO_EDICAO.linhas, estornoPendente: !!ESTORNO_EDICAO.pendente } : {})
-        })
-      }).then(r => r.json());
+      };
+      const enviarEd = extra => comTimeout(BACKEND + "/api/caixa-atacado/editar-pagamento", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...corpoEd, ...extra }) }).then(r => r.json());
+      let resp = await enviarEd({});
+      if (resp.precisaConfirmarNota) { // já existe NFC-e: mudar o pedido não muda a nota
+        if (!confirm("⚠️ " + resp.erro)) throw new Error("Alteração cancelada: a NFC-e já emitida continuaria com o valor antigo e nada foi gravado.");
+        resp = await enviarEd({ confirmarNota: true });
+      }
       if (resp.erro) throw new Error(resp.erro);
       ESTORNO_EDICAO = null;
       if (campo) campo.value = "";
@@ -1212,6 +1213,7 @@ function salvarEdicaoPagamento() {
               <span class="muted">Pagamento de:</span> ${esc(resp.de || "—")}<br>
               <span class="muted">Para:</span> ${esc(resp.para || "—")}<br>
               <span class="muted">Autorizado por:</span> ${esc(resp.autorizadoPor || AUTORIZADO_POR || "—")}</div>
+            ${resp.nfceDesatualizada ? `<div style="margin-top:10px;padding:8px;background:#3a2a0a;border:1px solid #8a6a1a;border-radius:8px;font-size:12px;text-align:left;color:#ffe08a">🧾 <b>A NFC-e${resp.nfceDesatualizada.numero ? " nº " + esc(resp.nfceDesatualizada.numero) : ""} ficou desatualizada</b> (${resp.nfceDesatualizada.valorNota ? "nota " + brl(resp.nfceDesatualizada.valorNota) : "valor antigo"} × pedido agora ${brl(resp.nfceDesatualizada.novoTotal)}). O financeiro foi avisado: cancelar a nota no Bling e emitir de novo na Gestão de NFC-e.</div>` : ""}
             ${iaMsg}${estMsg}${repMsg}${(() => { const eo = resp.estorno; if (!eo) return ""; const rotE = r => r.forma === "pix" ? "por Pix (" + esc(r.banco) + ")" : r.forma === "credito" ? "como crédito para o cliente" : "em dinheiro da gaveta"; return `<div style="margin-top:10px;padding:8px;background:#2a1d3a;border:1px solid #7a4cc2;border-radius:8px;font-size:12px;text-align:left;color:#e8d7ff">↩️ <b>Devolvido ao cliente</b> (já tinha pago ${brl(eo.recebidoLiquido)}, novo total ${brl(eo.novoTotal)})${(eo.registrados || []).map(r => "<br>" + brl(r.valor) + " " + rotE(r)).join("")}${eo.pendente ? `<br>⏳ <b>Falta devolver ${brl(eo.pendente)}</b> (a gerência foi avisada)` : ""}${(eo.falhas || []).length ? "<br>⚠️ " + esc(eo.falhas.join("; ")) : ""}</div>`; })()}
             ${resp.incluidoNoCaixa ? `<div style="margin-top:10px;padding:8px;background:#2a2410;border:1px solid #6b5f1f;border-radius:8px;color:#ffd23f;font-size:12px;text-align:left">⚠️ Este pedido não estava em nenhum caixa do sistema. Foi <b>incluído no caixa atual</b> (${esc(resp.incluidoNoCaixa.operador || "você")}).</div>` : ""}
             <button class="btn" style="width:100%;margin-top:14px" onclick="fecharModais();novaVenda();carregarPedidos();carregarSessao().then(render)">OK</button>
@@ -2154,6 +2156,7 @@ function render() {
           ${CLIENTE_NOME ? `<div class="muted">👤 Cliente: <b style="color:#cfc9f5">${esc(CLIENTE_NOME)}</b></div>` : ''}
           ${PEDIDO_ATUAL.recebidoNaEntrega ? `<div style="margin-top:8px;padding:8px 10px;background:#0f2a1f;border:1px solid #2f9e6b;border-radius:8px;font-size:12px;color:#bff5d9">🛵 <b>Entregue e recebido pelo ${PEDIDO_ATUAL.recebidoNaEntrega.peloEscritorio ? "escritório" : "motorista"}${PEDIDO_ATUAL.recebidoNaEntrega.motorista ? " " + esc(PEDIDO_ATUAL.recebidoNaEntrega.motorista) : ""}</b>${PEDIDO_ATUAL.recebidoNaEntrega.em ? " em " + new Date(PEDIDO_ATUAL.recebidoNaEntrega.em).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}: ${PEDIDO_ATUAL.recebidoNaEntrega.formas.map(f => esc(f.formaNome) + (f.banco ? " (" + esc(f.banco) + ")" : "") + " " + brl(f.valor)).join(" · ")}.<br>Aqui você só registra no caixa o que veio da rua. O pedido vai direto para <b>Atendido</b>, sem passar pela separação.</div>` : (PEDIDO_ATUAL.entregue ? `<div style="margin-top:8px;padding:8px 10px;background:#1c1846;border:1px solid #3a3480;border-radius:8px;font-size:12px">🛵 Pedido já entregue: ao finalizar, vai direto para <b>Atendido</b>.</div>` : '')}
           ${MODO_EDICAO_PAGAMENTO ? `<div style="margin-top:8px;padding:8px;background:#2a0f14;border:1px solid #6b1f24;border-radius:8px;font-size:12px;color:#ff9aa2">✏️ <b>Pedido reaberto</b>. Autorizado por ${esc(AUTORIZADO_POR || "—")}. Como ele já foi finalizado, ao salvar o sistema <b>estorna o estoque, aplica as mudanças e lança de novo</b> automaticamente. Pode <b>retirar/alterar itens</b> e escolher a nova forma de pagamento — tudo que mudar fica registrado no histórico (caixa, Bling e Central).</div>` : ""}
+          ${MODO_EDICAO_PAGAMENTO && NFCE_ABERTA ? `<div style="margin-top:6px;padding:8px;background:#3a2a0a;border:1px solid #8a6a1a;border-radius:8px;font-size:12px;color:#ffe08a">🧾 <b>Este pedido já tem NFC-e${NFCE_ABERTA.numero ? " nº " + esc(NFCE_ABERTA.numero) : ""}${NFCE_ABERTA.valorNota ? " de " + brl(NFCE_ABERTA.valorNota) : ""}.</b> Se você mudar itens ou valor, <b>a nota não muda</b>: ela precisa ser cancelada no Bling e emitida de novo. O sistema vai pedir confirmação e avisar o financeiro.</div>` : ""}
           ${MODO_EDICAO_PAGAMENTO && RECEBIMENTO && RECEBIMENTO.bruto > 0 ? `<div style="margin-top:6px;padding:8px;background:#1d1a3a;border:1px solid #3a3480;border-radius:8px;font-size:12px;color:#cfc9f5">💰 <b>Já recebido:</b> ${RECEBIMENTO.linhas.map(p => esc(p.formaNome) + " " + brl(p.valor)).join(" · ")}${RECEBIMENTO.troco > 0.009 ? " · troco " + brl(RECEBIMENTO.troco) : ""}${RECEBIMENTO.estornado > 0.009 ? " · já devolvido " + brl(RECEBIMENTO.estornado) : ""} <b>= ${brl(RECEBIMENTO.liquido)}</b>. Se o novo total ficar menor, a diferença é <b>devolvida ao cliente</b> (estorno) e fica registrada no caixa e no histórico.${RECEBIMENTO.pendente ? ` <b style="color:#ffd23f">⏳ Falta devolver ${brl(RECEBIMENTO.pendente.valor)} de uma reabertura anterior.</b>` : ""}</div>` : ""}
         </div>` : `<h3 style="margin-bottom:8px">🛒 Nova venda</h3>`}
         <div class="muted" style="margin-bottom:6px">💰 Modo de preço desta venda</div>

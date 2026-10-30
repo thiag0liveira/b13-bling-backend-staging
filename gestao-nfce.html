@@ -89,6 +89,7 @@ function cardVenda(p) {
         <div style="font-size:18px;font-weight:900;color:#ffd23f;margin-top:4px">${brl(p.total)}</div>
       </div>
     </div>
+    ${p.nfceDesatualizada ? `<div style="margin-top:8px;padding:9px;background:#3a1020;border:1px solid #ff5f8a;border-radius:8px;font-size:12.5px;line-height:1.45">⚠️ <b>Pedido alterado DEPOIS da nota.</b> A NFC-e${p.nfce && p.nfce.numeroNota ? " #" + esc(p.nfce.numeroNota) : ""} está com <b>${p.nfceDesatualizada.valorNota ? brl(p.nfceDesatualizada.valorNota) : "o valor antigo"}</b> e o pedido agora é <b>${brl(p.total)}</b>.${p.nfceDesatualizada.canceladaNoBling ? ` <span style="color:#8fffc0">A nota já está cancelada no Bling: pode liberar a nova emissão.</span>` : ` Cancele a nota no Bling (dentro do prazo da SEFAZ) e depois libere a nova emissão aqui.`}<div style="margin-top:6px"><button class="btn btn-grn" onclick="liberarReemissao('${p.pedidoId}')">🔓 Liberar nova emissão</button></div></div>` : ""}
     <div class="lin"><div class="muted" style="margin-bottom:4px">Produtos:</div>${produtosHtml}</div>
     <div class="lin"><div class="muted" style="margin-bottom:4px">Formas de pagamento:</div>${formasHtml}</div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px">
@@ -107,7 +108,7 @@ function mesLabel() {
 function render() {
   const app = document.getElementById("app");
   let lista = LISTA.slice();
-  if (FILTRO === "pendentes") lista = lista.filter(p => !p.jaEmitida);else if (FILTRO === "emitidas") lista = lista.filter(p => p.jaEmitida);
+  if (FILTRO === "pendentes") lista = lista.filter(p => !p.jaEmitida);else if (FILTRO === "emitidas") lista = lista.filter(p => p.jaEmitida);else if (FILTRO === "desatualizadas") lista = lista.filter(p => p.nfceDesatualizada);
   const pend = LISTA.filter(p => !p.jaEmitida).length;
   // formas de pagamento distintas presentes na lista (já filtrada por status),
   // pra montar os chips e o resumo de totais
@@ -129,6 +130,7 @@ function render() {
           <span class="chip ${FILTRO === 'todos' ? 'on' : ''}" onclick="FILTRO='todos';render()">Todos</span>
           <span class="chip ${FILTRO === 'pendentes' ? 'on' : ''}" onclick="FILTRO='pendentes';render()">⏳ Sem NFC-e</span>
           <span class="chip ${FILTRO === 'emitidas' ? 'on' : ''}" onclick="FILTRO='emitidas';render()">✅ Emitidas</span>
+          ${LISTA.some(p => p.nfceDesatualizada) ? `<span class="chip ${FILTRO === 'desatualizadas' ? 'on' : ''}" style="border-color:#ff5f8a" onclick="FILTRO='desatualizadas';render()">⚠️ Nota desatualizada (${LISTA.filter(p => p.nfceDesatualizada).length})</span>` : ""}
         </div>
         <div class="muted" style="font-size:11px;margin-bottom:4px">Forma de pagamento</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
@@ -158,7 +160,7 @@ function mesclar(novas) {
       mudou = true;
     } else {
       const cur = LISTA[idx[k]];
-      if (cur.jaEmitida !== nv.jaEmitida || cur.total !== nv.total || (cur.produtos || []).length !== (nv.produtos || []).length) {
+      if (cur.jaEmitida !== nv.jaEmitida || cur.total !== nv.total || (cur.produtos || []).length !== (nv.produtos || []).length || JSON.stringify(cur.produtos) !== JSON.stringify(nv.produtos) || JSON.stringify(cur.formas) !== JSON.stringify(nv.formas) || JSON.stringify(cur.nfceDesatualizada || null) !== JSON.stringify(nv.nfceDesatualizada || null)) {
         LISTA[idx[k]] = nv;
         mudou = true;
       }
@@ -187,6 +189,12 @@ async function carregar() {
     CARREGANDO = false;
     render();
   }
+}
+async function liberarReemissao(id) {
+  if (!confirm("Só continue se a NFC-e antiga JÁ foi cancelada no Bling. O sistema confere com o Bling e só libera se a nota não estiver mais valendo. Continuar?")) return;
+  try { const j = await fetch(B + "/api/nfce/pedido/" + encodeURIComponent(id) + "/liberar-reemissao", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ operador: (S && S.nome) || "" }) }).then(r => r.json());
+    if (j.erro) { alert(j.erro); return; } alert(j.mensagem || "Liberado."); carregar();
+  } catch (e) { alert("Não consegui liberar: " + e.message); }
 }
 async function diagnosticoFiscal(id) {
   const ov = document.createElement("div");

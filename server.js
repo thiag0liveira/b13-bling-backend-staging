@@ -2657,6 +2657,7 @@ app.post("/api/nfce/pedido/:id/emitir",async(req,res)=>{
     // disso (por isso a tela mostrava "sem NFC-e") -- em vez de tentar gerar de
     // novo e tomar erro ("possui nota fiscal referenciada"), sincroniza com o
     // que já existe de verdade lá.
+    if(notaJaExistente && (notaJaExistente.id||notaJaExistente.numero) && notaJaExistente.id){ const nn=await _lerNotaBling(notaJaExistente.id); if(nn&&_NFCE_SIT_SEM_VALOR.has(nn.situacao)) notaJaExistente=null; } // nota cancelada/rejeitada não impede emitir outra
     if(notaJaExistente && (notaJaExistente.id||notaJaExistente.numero)){
       let link=null;
       try{ const det=await bling(`/nfce/${notaJaExistente.id}`); link=det?.data?.linkDanfe||det?.data?.linkPDF||null; }catch(e){}
@@ -2772,7 +2773,7 @@ app.get("/api/nfce/emitidas-bling",async(req,res)=>{
   }catch(e){ res.status(e.status||500).json({erro:e.message}); }
 });
 
-app.get("/api/nfce/vendas-caixa-atacado",(req,res)=>{
+app.get("/api/nfce/vendas-caixa-atacado",async(req,res)=>{
   try{
     const now=new Date();
     const ini=new Date(now.getFullYear(), now.getMonth(), 1).getTime();
@@ -2799,11 +2800,25 @@ app.get("/api/nfce/vendas-caixa-atacado",(req,res)=>{
         };
       });
     });
-    const vendas=Object.values(porPedido).map(v=>{ delete v._em; return v; }).sort((a,b)=>b.em-a.em);
+        const vendas=Object.values(porPedido).map(v=>{ delete v._em; return v; }).sort((a,b)=>b.em-a.em);
+    // nota emitida e pedido alterado DEPOIS dela (ou marcada na reabertura): lê no Bling o valor e a situação da nota para mostrar a divergência
+    const dep=vendas.filter(v=>v.jaEmitida&&v.nfce&&(v.nfce.desatualizada||false)).slice(0,25);
+    await Promise.all(dep.map(async v=>{ v.nfceDesatualizada={...v.nfce.desatualizada}; const nota=v.nfce.idNotaFiscal?await _lerNotaBling(v.nfce.idNotaFiscal):null;
+      if(nota){ v.nfceDesatualizada.valorNota=nota.valorNota??v.nfceDesatualizada.valorNota; v.nfceDesatualizada.situacao=nota.situacao; v.nfceDesatualizada.canceladaNoBling=_NFCE_SIT_SEM_VALOR.has(nota.situacao); v.nfceDesatualizada.diverge=nota.valorNota!=null?Math.abs(nota.valorNota-Number(v.total))>0.009:true; }
+      v.nfceDesatualizada.totalAtual=Number(v.total); }));
     res.json({data:vendas, total:vendas.length, mes:`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+// LIBERAR NOVA EMISSÃO: depois que a NFC-e foi cancelada no Bling (pedido alterado depois da nota), tira o registro de "já emitida" para a Gestão de NFC-e emitir com o valor novo.
+// Só libera se o Bling confirma que a nota NÃO está mais valendo (cancelada, rejeitada, denegada ou rascunho): nunca abre emissão em duplicidade.
+app.post("/api/nfce/pedido/:id/liberar-reemissao",async(req,res)=>{ try{ const id=String(req.params.id), E=lerNfceEmitidas(), rg=E[id]; if(!rg) return res.status(404).json({erro:"Esse pedido não tem NFC-e registrada aqui."});
+  if(!rg.idNotaFiscal) return res.status(409).json({erro:"Não tenho o código da nota no Bling para conferir se ela foi cancelada. Confira no Bling e emita por lá."});
+  const nota=await _lerNotaBling(rg.idNotaFiscal); if(!nota) return res.status(502).json({erro:"Não consegui consultar a nota no Bling agora. Tente de novo em instantes."});
+  if(!_NFCE_SIT_SEM_VALOR.has(nota.situacao)) return res.status(409).json({erro:`A NFC-e nº ${nota.numero||rg.numeroNota||"?"} ainda está VALENDO no Bling (situação ${nota.situacao}). Cancele a nota no Bling primeiro (dentro do prazo da SEFAZ) e depois libere a nova emissão.`,situacao:nota.situacao});
+  try{ fs.appendFileSync(`${DATA_DIR}/nfce_historico.jsonl`,JSON.stringify({em:Date.now(),pedidoId:id,registro:rg,situacaoNoBling:nota.situacao,liberadoPor:String(req.body&&req.body.operador||"").slice(0,60)})+"\n"); }catch(e){}
+  Object.keys(E).forEach(k=>{ if(E[k]&&rg.idNotaFiscal&&E[k].idNotaFiscal===rg.idNotaFiscal) delete E[k]; }); delete E[id]; salvarNfceEmitidas(E); addLog(id,"nfce_liberada_para_reemissao",null,String(req.body&&req.body.operador||""),{numeroNota:nota.numero,situacao:nota.situacao});
+  res.json({ok:true,mensagem:"Pronto: o pedido voltou para \"Sem NFC-e\" e já pode ser emitido com o valor atual."}); }catch(e){ res.status(500).json({erro:e.message}); } });
 // DETALHE de um pedido: produtos e formas de pagamento (resolve o nome da forma)
 app.get("/api/nfce/pedido/:id/detalhe",async(req,res)=>{
   try{
@@ -4552,6 +4567,14 @@ app.get("/api/diag/midias-recentes",requireAdmin,(req,res)=>{ try{ const dias=Ma
   if(antigo) leitura.push(`O arquivo mais antigo guardado agora tem ${((Date.now()-antigo)/86400000).toFixed(1)} dias: é o tempo REAL que as gravações estão ficando (o limite normal é ${COMPROV_DIAS_MANTER} dias, mas o teto de espaço de ${Math.round(_tetoComprovantesBytes()/1048576)} MB apaga os mais antigos antes disso quando o volume de gravações é grande).`);
   if(d&&d.pctLivre<DISCO_ALVO_LIVRE_PCT) leitura.push(`O volume está com ${d.pctLivre}% livre, abaixo da meta de ${DISCO_ALVO_LIVRE_PCT}%: arquivos com mais de ${COMPROV_PROTEGER_HORAS/24} dias são apagados a cada rodada da limpeza.`);
   res.json({ok:true,dias,total,noDisco:ok,faltando:total-ok,videos,videosNoDisco:videosOk,mbNoDisco:+(bytesOk/1048576).toFixed(1),porDia,disco:d?{livreMB:+(d.livre/1048576).toFixed(0),pctLivre:d.pctLivre}:null,arquivoMaisAntigoDias:antigo?+((Date.now()-antigo)/86400000).toFixed(1):null,leitura,ausentes:ausentes.slice(0,80)}); }catch(e){ res.status(500).json({erro:e.message}); } });
+// ===== NFC-e E ALTERAÇÃO DO PEDIDO =====
+// Uma NFC-e autorizada NÃO muda quando o pedido muda. Situação da nota no Bling (mesmos códigos usados em /api/nfce/emitidas-bling): 5 autorizada; 2 cancelada, 4 rejeitada, 9 denegada, 1 pendente (rascunho) não valem mais.
+const _NFCE_SIT_SEM_VALOR=new Set([1,2,4,9]);
+async function _lerNotaBling(idNota){ try{ const det=(await bling(`/nfce/${idNota}`))?.data; if(!det) return null; const v=Number(det.valorNota??det.valor); return {id:idNota,numero:det.numero||null,situacao:Number(det.situacao),valorNota:Number.isFinite(v)&&v>0?_round2(v):null,link:det.linkDanfe||det.linkPDF||null}; }catch(e){ return null; } }
+// a NFC-e que está valendo para o pedido (do nosso registro ou do que o Bling diz no pedido); null se não há ou se já foi cancelada/rejeitada
+async function _notaAtivaDoPedido(idStr,ped){ const loc=lerNfceEmitidas()[String(idStr)]||null, bl=ped&&ped.notaFiscal&&(ped.notaFiscal.id||ped.notaFiscal.numero)?ped.notaFiscal:null; const idN=(loc&&loc.idNotaFiscal)||(bl&&bl.id)||null; if(!loc&&!bl) return null;
+  const nota=idN?await _lerNotaBling(idN):null; if(nota&&_NFCE_SIT_SEM_VALOR.has(nota.situacao)) return null; // cancelada/rejeitada: não segura a edição
+  return {id:idN,numero:(nota&&nota.numero)||(loc&&loc.numeroNota)||(bl&&bl.numero)||null,valorNota:nota?nota.valorNota:null,situacao:nota?nota.situacao:null,lida:!!nota,em:loc?loc.em:null}; }
 // DIAGNÓSTICO DAS MÍDIAS DE UM PEDIDO (pelo número): cada foto/vídeo registrado, se o arquivo existe, tamanho, e quando/por que foi apagado
 app.get("/api/diag/midias-pedido/:ref",requireAdmin,(req,res)=>{ try{ const ref=String(req.params.ref||"").replace(/\D/g,""); const r=_indicePedidos().lista.find(x=>String(x.numero)===ref||String(x.id)===ref); const id=r?String(r.id):ref, ev=(lerLog()[id]||[]).filter(e=>e.detalhes&&e.detalhes.url);
   const dh=ms=>ms?new Date(Number(ms)-3*3600e3).toISOString().slice(0,19).replace("T"," "):"";
@@ -7838,6 +7861,11 @@ app.post("/api/caixa-atacado/editar-pagamento",async(req,res)=>{
     const valorPedidoNovo = itensMudaramEd
       ? +(itensNovos.reduce((s2,i)=>s2+ +(Number(i.valor||0)*Number(i.quantidade||0)).toFixed(2),0)+Number(ped.outrasDespesas||0)+Number(req.body.frete!=null?req.body.frete:(ped.transporte?.frete||0))-Number(ped.desconto?.valor||0)).toFixed(2)
       : totalPedido;
+        // NFC-e já emitida: mudar itens/valor NÃO muda a nota. Avisa antes de gravar e exige confirmação.
+    const mudaValor=itensMudaramEd||Math.abs(valorPedidoNovo-totalPedido)>0.009;
+    const notaAtiva=mudaValor?await _notaAtivaDoPedido(idStr0,ped):null;
+    if(notaAtiva&&!req.body.confirmarNota) return res.status(409).json({precisaConfirmarNota:true,nfce:notaAtiva,totalAtual:totalPedido,novoTotal:valorPedidoNovo,
+      erro:`Este pedido já tem a NFC-e nº ${notaAtiva.numero||"?"} emitida${notaAtiva.valorNota?` (R$ ${notaAtiva.valorNota.toFixed(2).replace(".",",")})`:""}. Alterar os itens ou o valor (de R$ ${totalPedido.toFixed(2).replace(".",",")} para R$ ${valorPedidoNovo.toFixed(2).replace(".",",")}) NÃO muda a nota: ela continua com o valor antigo e precisa ser cancelada no Bling e emitida de novo. Deseja alterar mesmo assim?`});
     const rec=_recebimentoDoPedido(idStr0,ped);
     const sobraEstorno=itensMudaramEd?_round2(rec.liquido-valorPedidoNovo):0;   // soma de TODOS os itens retirados (e reaberturas anteriores): recebido líquido − novo total
     const somaTipada=_round2(linhas.reduce((a,p)=>a+(Number(p.valor)||0),0)), pagaMais=somaTipada>rec.bruto+0.05;   // o operador está registrando dinheiro NOVO além do que já estava recebido
@@ -8012,6 +8040,12 @@ app.post("/api/caixa-atacado/editar-pagamento",async(req,res)=>{
     const achouMov=marcarMovimentoAlterado(idStr, linhas.map(p=>({formaNome:p.formaNome||"",valor:+Number(p.valor).toFixed(2)})), alteracao, {novoTotal:valorPedido, frete:Number(req.body.frete||0), itens:itensMudaramEd?itensNovos:null, alteracoesExtra:altItens, troco:trocoEd});
     if(pendNovo!==null){ try{ const dP2=lerCaixaSessoes(); let mx2=false; for(const s3 of (dP2.sessoes||[])) for(const m3 of (s3.movimentos||[])) if(m3&&m3.tipo==="venda"&&!m3.cancelado&&String(m3.pedidoId)===idStr){ if(pendNovo>0.049) m3.estornoPendente=pendNovo; else delete m3.estornoPendente; mx2=true; } if(mx2) salvarCaixaSessoes(dP2); }catch(e){} }
     addLog(idStr,"pagamento_editado_caixa",funcionarioId,alteracao.por,{autorizadoPor:auth.funcionario.nome,de:descAntes,para:descDepois,...(modoEstorno?{estorno:estornoTxt,recebidoLiquido:rec.liquido,novoTotal:valorPedidoNovo}:{})});
+        let nfceDesat=null;
+    if(notaAtiva){ nfceDesat={numero:notaAtiva.numero,valorNota:notaAtiva.valorNota,totalAntes:totalPedido,novoTotal:valorPedidoNovo};
+      try{ const E=lerNfceEmitidas(), rg=E[idStr]; if(rg){ rg.desatualizada={em:Date.now(),por:alteracao.por,totalAntes:totalPedido,novoTotal:valorPedidoNovo,valorNota:notaAtiva.valorNota}; salvarNfceEmitidas(E); }
+        addLog(idStr,"nfce_desatualizada",funcionarioId,alteracao.por,{numeroNota:notaAtiva.numero,valorNota:notaAtiva.valorNota,totalAntes:totalPedido,novoTotal:valorPedidoNovo});
+        registrarAviso({tipo:"nfce_desatualizada",titulo:`NFC-e #${notaAtiva.numero||"?"} desatualizada — pedido #${numero||ped.numero} mudou de R$ ${totalPedido.toFixed(2)} para R$ ${valorPedidoNovo.toFixed(2)}`,pedidoId:idStr,numero:numero||ped.numero,operador:alteracao.por,origem:"Caixa Atacado (reabertura)",fingerprint:`nfcedesat-${idStr}`,
+          oQueFazer:`A nota continua com ${notaAtiva.valorNota?"R$ "+notaAtiva.valorNota.toFixed(2):"o valor antigo"}. Cancele a NFC-e no Bling (se ainda estiver dentro do prazo da SEFAZ) e depois, na Gestão de NFC-e, use "Liberar nova emissão" para emitir com R$ ${valorPedidoNovo.toFixed(2)}. Se o prazo de cancelamento passou, fale com o contador.`}); }catch(e){ console.error("[nfce desatualizada]",e.message); } }
     let estornoResp=null;
     if(modoEstorno){
       const registrados=[], falhas=[]; let feito=0;
@@ -8059,7 +8093,7 @@ app.post("/api/caixa-atacado/editar-pagamento",async(req,res)=>{
       }
     }
 
-    res.json({ok:true, avisoPagamento, avisoSituacao:avisoSitEd, estorno:estornoResp, autorizadoPor:auth.funcionario.nome, de:descAntes, para:descDepois, numero:numero||ped.numero, movimentoAtualizado:achouMov, incluidoNoCaixa,
+    res.json({ok:true, nfceDesatualizada:nfceDesat, avisoPagamento, avisoSituacao:avisoSitEd, estorno:estornoResp, autorizadoPor:auth.funcionario.nome, de:descAntes, para:descDepois, numero:numero||ped.numero, movimentoAtualizado:achouMov, incluidoNoCaixa,
       itensAlterados:itensMudaramEd?{retirados:diffItensEd.retirados.map(_fmtItem),acrescentados:diffItensEd.acrescentados.map(_fmtItem),alterados:diffItensEd.alterados.map(a=>`${a.nome}: ${a.de.quantidade}x→${a.para.quantidade}x`)}:null,
       estoqueReposto:estoqueRepostoEd,
       estoque: relancamento ? (relancamento.ok
@@ -9176,6 +9210,7 @@ app.get("/api/caixa-atacado/pedido/:id",async(req,res)=>{
       quandoRecebeu: recebidoInfo?.quando||null, valorRecebido: recebidoInfo?.valor||0,
       statusPagamento: soEntrega ? "pendente" : statusPagLocal, valorPago: soEntrega ? 0 : (pReg?.valorPago||0),
       jaSaiuDoFluxoInicial, pagoNoCaixa,
+      nfce:await _notaAtivaDoPedido(String(d.id),d).catch(()=>null), // NFC-e que está valendo para o pedido (a tela avisa que mudar o pedido não muda a nota)
       recebimento:(()=>{ try{ return _recebimentoDoPedido(String(d.id),d); }catch(e){ return null; } })(), // o que o cliente já pagou, o que já foi devolvido e o líquido (base do estorno na reabertura)
     });
   }catch(e){ res.status(e.status||500).json({erro:e.message,detalhe:e.body}); }
