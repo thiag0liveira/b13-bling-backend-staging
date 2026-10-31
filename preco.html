@@ -242,7 +242,7 @@ let CAT = { versao: "", mapa: new Map(), em: 0 }, ONLINE = true, EXIBINDO = null
 const CATALOGO_VELHO_DIAS = 2, DIAG_KEY = "b13_preco_diag_v1";
 let SINC = (() => { try { return JSON.parse(localStorage.getItem(DIAG_KEY) || "{}"); } catch (e) { return {}; } })();
 function salvarSinc() { try { localStorage.setItem(DIAG_KEY, JSON.stringify(SINC)); } catch (e) {} }
-function itemTela(it) { return { produtoId: it.id, nome: it.n, preco: it.p, precoAtacado: it.a ?? null, precoFardo: it.f ?? null, caixaQtd: it.q ?? null, imagem: it.i || null }; }
+function itemTela(it) { return { produtoId: it.id, nome: it.n, preco: it.p, precoAtacado: it.a ?? null, precoFardo: it.f ?? null, caixaQtd: it.q ?? null, imagem: it.i || null, promo: !!it.promo, promoFim: it.fim || null, precoNormal: it.pNormal ?? null, atacadoNormal: it.aNormal ?? null, fardoNormal: it.fNormal ?? null }; }
 function aplicarCatalogo(versao, itens, em) {
   const m = new Map(); (itens || []).forEach(it => { const p = itemTela(it); (it.k || []).forEach(c => { if (c) m.set(String(c), p); }); });
   let ovr = {}; try { ovr = JSON.parse(localStorage.getItem(OVR_KEY) || "{}"); } catch (e) {}
@@ -277,14 +277,18 @@ function marcarConexao() {
   el.textContent = "📶 sem conexão · mostrando os preços guardados" + (CAT.em ? " (atualizados " + new Date(CAT.em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) + ")" : "");
 }
 function mostrarProduto(p) {
-  const extras = [];
-  if (p.precoFardo != null) extras.push(`<div class="cardPreco fardo"><div class="rot">FARDO</div><div class="val">${brl(p.precoFardo)}</div>${p.caixaQtd ? `<div class="obs">a partir de ${p.caixaQtd} un.</div>` : ""}</div>`);
-  if (p.precoAtacado != null) extras.push(`<div class="cardPreco atacado"><div class="rot">ATACADO</div><div class="val">${brl(p.precoAtacado)}</div></div>`);
+  const extras = [], promo = !!(p.promo || p.promocao), fim = p.promoFim || (p.promocao && p.promocao.fim) || "";
+  const normal = (n, v) => promo && n != null && Number(n) > Number(v) + 0.004 ? `<div style="font-size:.55em;color:#9a95c9;text-decoration:line-through;font-weight:700">de ${brl(n)}</div>` : "";
+  const nV = p.precoNormal ?? p.precoOriginal, nA = p.atacadoNormal ?? p.precoAtacadoOriginal, nF = p.fardoNormal ?? p.precoFardoOriginal;
+  const selo = promo ? `<div style="display:inline-block;background:#FF0082;color:#fff;font-weight:900;font-size:18px;padding:6px 16px;border-radius:999px;margin-bottom:8px;letter-spacing:.5px">🔥 PROMOÇÃO${fim ? " · até " + fim.split("-").reverse().slice(0, 2).join("/") : ""}</div>` : "";
+  if (p.precoFardo != null) extras.push(`<div class="cardPreco fardo"><div class="rot">FARDO</div>${normal(nF, p.precoFardo)}<div class="val">${brl(p.precoFardo)}</div>${p.caixaQtd ? `<div class="obs">a partir de ${p.caixaQtd} un.</div>` : ""}</div>`);
+  if (p.precoAtacado != null) extras.push(`<div class="cardPreco atacado"><div class="rot">ATACADO</div>${normal(nA, p.precoAtacado)}<div class="val">${brl(p.precoAtacado)}</div></div>`);
   document.getElementById("app").innerHTML = `
     <div class="resultado">
       ${p.imagem ? `<img src="${esc(p.imagem)}" onerror="this.style.display='none'">` : ""}
+            ${selo}
       <div class="nome">${esc(p.nome)}</div>
-      <div class="preco">${brl(p.preco)}<small>VAREJO — preço unitário</small></div>
+      <div class="preco">${normal(nV, p.preco)}${brl(p.preco)}<small>VAREJO — preço unitário</small></div>
       ${extras.length ? `<div class="maisPrecos">${extras.join("")}</div>` : ""}
     </div>`;
 }
@@ -292,9 +296,9 @@ function agendarVolta() { if (timerReset) clearTimeout(timerReset); timerReset =
 // confirma em segundo plano; se o preço ou o nome mudaram, corrige a tela (se ainda for o mesmo produto) e guarda
 async function confirmar(codigo, atual) {
   try {
-    const j = await comTempo(B + "/api/preco/gtin/" + encodeURIComponent(codigo) + "?vivo=1", 20000);
+    const j = await comTempo(B + "/api/preco/gtin/" + encodeURIComponent(codigo) + "?vivo=1&consulta=1", 20000);
     ONLINE = true;
-    if (j.data && (Number(j.data.preco) !== Number(atual.preco) || j.data.nome !== atual.nome || j.data.precoAtacado !== atual.precoAtacado || j.data.precoFardo !== atual.precoFardo)) {
+    if (j.data && (Number(j.data.preco) !== Number(atual.preco) || j.data.nome !== atual.nome || j.data.precoAtacado !== atual.precoAtacado || j.data.precoFardo !== atual.precoFardo || !!j.data.promocao !== !!(atual.promo || atual.promocao))) {
       guardarCorrecao(codigo, j.data);
       const hoje = new Date().toDateString(); if (SINC.corrigidosDia !== hoje) { SINC.corrigidosDia = hoje; SINC.corrigidosHoje = 0; } SINC.corrigidosHoje = (SINC.corrigidosHoje || 0) + 1; salvarSinc();
       if (EXIBINDO === codigo) mostrarProduto(j.data);
@@ -309,7 +313,7 @@ async function buscarPreco(codigo) {
   if (guardado) { mostrarProduto(guardado); agendarVolta(); confirmar(codigo, guardado); return; } // na hora
   document.getElementById("app").innerHTML = `<div class="sub" style="font-size:16px">Buscando…</div>`;
   try {
-    const j = await comTempo(B + "/api/preco/gtin/" + encodeURIComponent(codigo), 12000);
+    const j = await comTempo(B + "/api/preco/gtin/" + encodeURIComponent(codigo) + "?consulta=1", 12000);
     ONLINE = true;
     if (EXIBINDO !== codigo) return;
     if (j.data) { mostrarProduto(j.data); guardarCorrecao(codigo, j.data); confirmar(codigo, j.data); }

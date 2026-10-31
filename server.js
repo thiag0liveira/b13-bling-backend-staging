@@ -13706,7 +13706,8 @@ function _promoAplicaNoItem(p,idProd,opc){ try{ const ref={codigo:p.codigo,nome:
     if(opc&&opc.campos==="atacadoBling"){ // /api/buscar-atacado: precoAtacado, precoBling e preco
       if(pa){ p.precoAtacadoOriginal=p.precoAtacado??null; p.precoAtacado=pa.preco; p.preco=pa.preco; if(p.precoFardo!=null&&pa.preco<Number(p.precoFardo)){ p.precoFardoOriginal=p.precoFardo; p.precoFardo=pa.preco; } } // o botão "+ Fardo" também leva o preço da promoção quando ele é menor que o de fardo da tabela
       if(pv){ p.precoBlingOriginal=p.precoBling??null; p.precoBling=pv.preco; if(!pa&&!(p.precoAtacado>0)){ p.preco=pv.preco; } } }
-    else { const alvo=(opc&&opc.modo==="atacado")?pa:pv; if(alvo){ p.precoOriginal=p.preco??null; p.preco=alvo.preco; if(opc&&opc.modo==="atacado"){ p.precoAtacadoOriginal=p.precoAtacado??null; p.precoAtacado=alvo.preco; if(p.precoFardo!=null&&alvo.preco<Number(p.precoFardo)){ p.precoFardoOriginal=p.precoFardo; p.precoFardo=alvo.preco; } } } else delete p.promocao; }
+    else if(opc&&opc.modo==="ambos"){ if(pv){ p.precoOriginal=p.preco??null; p.preco=pv.preco; } if(pa){ p.precoAtacadoOriginal=p.precoAtacado??null; p.precoAtacado=pa.preco; if(p.precoFardo!=null&&pa.preco<Number(p.precoFardo)){ p.precoFardoOriginal=p.precoFardo; p.precoFardo=pa.preco; } } }
+ else { const alvo=(opc&&opc.modo==="atacado")?pa:pv; if(alvo){ p.precoOriginal=p.preco??null; p.preco=alvo.preco; if(opc&&opc.modo==="atacado"){ p.precoAtacadoOriginal=p.precoAtacado??null; p.precoAtacado=alvo.preco; if(p.precoFardo!=null&&alvo.preco<Number(p.precoFardo)){ p.precoFardoOriginal=p.precoFardo; p.precoFardo=alvo.preco; } } } else delete p.promocao; }
   }catch(e){} return p; }
 const _promoNrm=x=>String(x||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9,.\s]/g," ").replace(/\s+/g," ").trim();
 function _promoTokens(t){ const stop=new Set(["de","da","do","das","dos","c","com","un","und","unid","cx","pct","kit","lt","ln","pet","vd","e","o","a"]); const T=[]; _promoNrm(t).replace(/(\d+)[,.](\d+)\s*(l|ml)\b/g,"$1$2$3").replace(/(\d+)\s*(ml|l|lt|g|kg)\b/g,"$1$2").split(" ").forEach(w=>{ w=w.replace(/lt$/,"l"); if(w&&!stop.has(w)) T.push(w); }); return T; }
@@ -20159,7 +20160,7 @@ app.get("/api/preco/catalogo",(req,res)=>{
   try{
     const c0=_catalogoPreco(); let c=c0;
     if(Object.keys(_mapaPromoAtivo()).length){ // promoção ativa por cima do catálogo (a memória base continua com o preço normal para as análises)
-      const itens=c0.itens.map(x=>{ const ref={codigo:"",nome:x.n}, pa=_promoDoProduto(x.id||"","atacado",ref), pv=_promoDoProduto(x.id||"","varejo",ref); if(!pa&&!pv) return x; const y={...x,promo:true};
+      const itens=c0.itens.map(x=>{ const achar=modo=>{ let r=_promoDoProduto(x.id||"",modo,{codigo:"",nome:x.n}); if(r) return r; for(const c of (x.k||[])){ r=_promoDoProduto("",modo,{codigo:c,nome:""}); if(r) return r; } return null; }, pa=achar("atacado"), pv=achar("varejo"); if(!pa&&!pv) return x; const y={...x,promo:true,fim:((pv||pa)&&(pv||pa).fim)||null};
         if(pv&&pv.preco>0){ y.pNormal=x.p; y.p=pv.preco; } if(pa&&pa.preco>0){ y.aNormal=x.a; y.a=pa.preco; if(x.f!=null&&pa.preco<Number(x.f)){ y.fNormal=x.f; y.f=pa.preco; } } return y; });
       c={versao:crypto.createHash("sha1").update(JSON.stringify(itens)).digest("hex").slice(0,16),itens,geradoEm:c0.geradoEm}; }
     // data da última vez que o catálogo inteiro foi refeito com o Bling (botão "Atualizar índice"), para a etiqueta de manutenção
@@ -20173,7 +20174,8 @@ app.get("/api/preco/gtin/:codigo", async(req,res)=>{
     const codigo=String(req.params.codigo||"").trim();
     if(!codigo) return res.status(400).json({erro:"informe o código"});
     const querAtacado = req.query.atacado==="1"||req.query.atacado==="true";
-    if(req.query.promo==="1"){ const rj=res.json.bind(res); res.json=(o)=>{ try{ if(o&&o.data&&(o.data.produtoId||o.data.id)) _promoAplicaNoItem(o.data,o.data.produtoId||o.data.id,{modo:querAtacado?"atacado":"varejo"}); }catch(e){} return rj(o); }; } // promoção só para as telas de venda
+    const _leitor=req.query.vivo==="1"||req.query.consulta==="1"; // tela de consulta de preços (/preco): mostra varejo, atacado e fardo
+    if(req.query.promo==="1"||_leitor){ const rj=res.json.bind(res); res.json=(o)=>{ try{ if(o&&o.data&&(o.data.produtoId||o.data.id)) _promoAplicaNoItem(o.data,o.data.produtoId||o.data.id,{modo:_leitor?"ambos":(querAtacado?"atacado":"varejo")}); }catch(e){} return rj(o); }; } // promoção só para as telas de venda
 
     // anexa precoAtacado/precoFardo/caixaQtd (SEM mexer no preço de varejo) — usado
     // pela tela /preco pra mostrar os três preços juntos, mesma fonte da /etiqueta
