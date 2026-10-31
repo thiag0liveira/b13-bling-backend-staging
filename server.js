@@ -1331,6 +1331,7 @@ window.B13_NAV_LINKS=[
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/folha",label:"👥 Folha e Pessoal",acoes:["acesso_custos"]},
     {grupo:"NOTA FISCAL E FINANCEIRO",href:"/contas-bancarias",label:"🏦 Contas e Movimentação",acoes:["acesso_contas_pagar"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/vendas-abaixo-custo",label:"⚠️ Vendas abaixo do custo",acoes:["acesso_custos"]},
+  {grupo:"NOTA FISCAL E FINANCEIRO",href:"/historico-custos",label:"📜 Histórico de custos",acoes:["acesso_custos"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/taxas-cartao",label:"💳 Taxas de Cartão",acoes:["acesso_custos"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/gestao-nfce",label:"🧾 Gestão de NFC-e",acoes:["acesso_gestao_nfce"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/gestao-caixas",label:"🗃️ Gestão de Caixas",acoes:["acesso_gestao_caixas"]},
@@ -11434,6 +11435,7 @@ async function _gravarCustoProduto(id,c,quem,origem){
   ["unidade","pesoBruto","pesoLiquido","volumes","itensPorCaixa","gtin","gtinEmbalagem","tipoProducao","condicao","freteGratis","marca","descricaoCurta","descricaoComplementar","linkExterno","observacoes","dataValidade","midia","tributacao","estoque","fornecedor","dimensoes"].forEach(k=>{ if(pd[k]!==undefined&&pd[k]!==null&&pd[k]!=="") payload[k]=pd[k]; });
   if(pd.categoria?.id) payload.categoria={id:pd.categoria.id}; if(pd.linhaProduto?.id) payload.linhaProduto={id:pd.linhaProduto.id};
   const blingAntes=pd.precoCusto!=null?Number(pd.precoCusto):(pd.fornecedor?.precoCusto!=null?Number(pd.fornecedor.precoCusto):null), antes=Number(lerProdutosBling().porId[String(id)]?.pc??blingAntes??0)||0;
+ try{ _logCustoManual(id,antes,c,quem,origem); }catch(e){}
   payload.fornecedor={...(pd.fornecedor||{}),precoCusto:c,precoCompra:c};
   let avisoBling=""; try{ await bling(`/produtos/${id}`,{method:"PUT",body:JSON.stringify(payload)}); }catch(e){ avisoBling="o Bling não aceitou ("+e.message+"); ficou salvo no sistema"; }
   try{ const L=(await bling(`/produtos/fornecedores?idProduto=${id}`))?.data||[], f=L.find(x=>x.padrao)||L[0]; // fornecedor padrão: é de onde o Bling tira o custo
@@ -13571,6 +13573,37 @@ app.post("/api/custos/ficha/:fid",requireAcesso("acesso_custos"),(req,res)=>{
     salvarJSON(CUSTOS_FICHAS_FILE,fichas); addLog("funcionario-"+f.id,"ficha_de_custo",req.sessao?.funcionarioId||"",quem,{funcionario:f.nome,custoMensal:_round2(valores.salario+valores.encargos+valores.beneficios+valores.provisao)});
     res.json({ok:true,valores,custoMensal:_round2(valores.salario+valores.encargos+valores.beneficios+valores.provisao),ficha:fichas[f.id]});
   }catch(e){ res.status(500).json({erro:e.message}); } });
+// ===================== HISTÓRICO DE CUSTOS POR ENTRADA =====================
+// Cada entrada de estoque (nota ou sem nota) grava o custo aplicado por unidade de cada item (custoRealUn, que já inclui rateio de frete e bonificação). Aqui isso vira o histórico de custo por produto,
+// junto com os ajustes manuais de custo (margem bruta, ficha do produto), que passam a ser registrados em custos_historico.jsonl.
+const CUSTOS_HIST_FILE=`${DATA_DIR}/custos_historico.jsonl`;
+function _logCustoManual(id,antes,depois,quem,origem){ try{ fs.appendFileSync(CUSTOS_HIST_FILE,JSON.stringify({em:Date.now(),id:String(id),antes:antes!=null?Number(antes):null,custo:Number(depois),por:String(quem||"").slice(0,60),origem:String(origem||"").slice(0,60)})+"\n"); }catch(e){} }
+let _chCache={mt:0,mm:0,linhas:[],porProduto:{}};
+function _linhasCustos(){ // todas as linhas de custo (entradas + ajustes manuais), da mais nova para a mais antiga, com o custo anterior do mesmo produto
+  let mt=0,mm=0; try{ mt=fs.statSync(ENTRADAS_ESTOQUE_FILE).mtimeMs; }catch(e){} try{ mm=fs.statSync(CUSTOS_HIST_FILE).mtimeMs; }catch(e){}
+  if(_chCache.mt===mt&&_chCache.mm===mm&&_chCache.linhas.length) return _chCache; const L=[];
+  (lerEntradasEstoque().entradas||[]).forEach(e=>(e.itens||[]).forEach(i=>{ const c=Number(i.custo); if(i.ok===false||!(c>0)||!i.produtoId) return; L.push({em:e.em,origem:e.tipo==="sem_nota"?"Entrada sem nota":"Entrada de nota",entradaId:e.id,fornecedor:e.fornecedor||"",numeroNota:e.numeroNota||"",por:e.por||"",produtoId:String(i.produtoId),nome:(lerProdutosBling().porId[String(i.produtoId)]||{}).n||i.nome||"",quantidade:Number(i.quantidade)||0,custo:_round2(c)}); })); // nome do cadastro (o da nota do fornecedor pode ser diferente)
+  try{ fs.readFileSync(CUSTOS_HIST_FILE,"utf8").split("\n").slice(-20000).forEach(l=>{ if(!l) return; try{ const o=JSON.parse(l); if(!(o.custo>0)) return; const x=lerProdutosBling().porId[o.id]; L.push({em:o.em,origem:`Ajuste manual (${o.origem||"—"})`,entradaId:null,fornecedor:"",numeroNota:"",por:o.por||"",produtoId:o.id,nome:(x&&x.n)||"",quantidade:0,custo:_round2(o.custo),anteriorRegistrado:o.antes}); }catch(e){} }); }catch(e){}
+  L.sort((a,b)=>a.em-b.em); const ult={}, porProduto={}; L.forEach(r=>{ const a=ult[r.produtoId]; r.anterior=a!=null?a:(r.anteriorRegistrado!=null?_round2(r.anteriorRegistrado):null); r.variacaoPct=r.anterior>0?+(((r.custo-r.anterior)/r.anterior)*100).toFixed(1):null; ult[r.produtoId]=r.custo; (porProduto[r.produtoId]||(porProduto[r.produtoId]=[])).push(r); });
+  L.reverse(); Object.values(porProduto).forEach(a=>a.reverse()); _chCache={mt,mm,linhas:L,porProduto}; return _chCache; }
+function _contextoPrecoProduto(id){ const x=lerProdutosBling().porId[String(id)]||{}; let atac=null; try{ const idx=_indicePrecosTabela(), v=idx.porCodigo[String(x.c||"")]||idx.porNome[String(x.n||"").toLowerCase().trim()]; atac=v&&v.precoAtacado>0?Number(v.precoAtacado):null; }catch(e){}
+  return {nome:x.n||"",codigo:x.c||"",custoAtual:x.pc!=null?_round2(Number(x.pc)):null,precoVarejo:x.p>0?_round2(Number(x.p)):null,precoAtacado:atac}; }
+function _marcaAcima(r,ctx){ const lim=[ctx.precoAtacado,ctx.precoVarejo].filter(v=>v>0); r.acimaDoPreco=lim.length&&r.custo>Math.min(...lim)+0.005?(ctx.precoAtacado>0&&r.custo>ctx.precoAtacado+0.005?"atacado":"varejo"):null; return r; }
+const _permCustosEnt=requireAcesso("acesso_custos");
+app.get("/api/custos-entradas",_permCustosEnt,(req,res)=>{ try{ const dias=Math.min(730,Math.max(1,Number(req.query.dias)||60)), desde=Date.now()-dias*86400000, q=_promoNrm(req.query.q||""), toks=q.split(" ").filter(Boolean), so=String(req.query.so||"");
+  const ctxCache={}, ctxDe=id=>ctxCache[id]||(ctxCache[id]=_contextoPrecoProduto(id)); let L=_linhasCustos().linhas.filter(r=>r.em>=desde&&(!toks.length||toks.every(w=>_promoNrm(r.nome+" "+(ctxDe(r.produtoId).codigo||"")).includes(w))));
+  L=L.map(r=>_marcaAcima({...r},ctxDe(r.produtoId))); if(so==="aumentos") L=L.filter(r=>r.variacaoPct!=null&&r.variacaoPct>0.05); if(so==="acima") L=L.filter(r=>r.acimaDoPreco);
+  const resumo={linhas:L.length,produtos:new Set(L.map(r=>r.produtoId)).size,aumentos:L.filter(r=>r.variacaoPct>0.05).length,quedas:L.filter(r=>r.variacaoPct<-0.05).length,custoAcimaDoPreco:L.filter(r=>r.acimaDoPreco).length};
+  res.json({ok:true,dias,resumo,linhas:L.slice(0,400).map(r=>({...r,dia:_diaBRk(r.em),custoAtual:ctxDe(r.produtoId).custoAtual}))}); }catch(e){ res.status(500).json({erro:e.message}); } });
+app.get("/api/custos-entradas/produto/:id",_permCustosEnt,(req,res)=>{ try{ const id=String(req.params.id), ctx=_contextoPrecoProduto(id), L=((_linhasCustos().porProduto[id])||[]).slice(0,Math.min(60,Math.max(1,Number(req.query.limite)||20))).map(r=>({..._marcaAcima({...r},ctx),dia:_diaBRk(r.em)}));
+  if(!ctx.nome&&!L.length) return res.status(404).json({erro:"produto não encontrado"}); const vistos=lerJSON(CUSTOS_MANUAIS_FILE,{})[id]||null;
+  res.json({ok:true,produto:{id,...ctx},custoManualVigente:vistos?{custo:vistos.custo,em:vistos.em,por:vistos.por,origem:vistos.origem}:null,historico:L,
+    leitura:[...(L.length?[`Último custo lançado: R$ ${L[0].custo.toFixed(2)} (${L[0].origem}, ${_diaBRk(L[0].em)})${L[0].variacaoPct!=null?`, ${L[0].variacaoPct>0?"+":""}${L[0].variacaoPct}% sobre o anterior`:""}.`]:["Nenhuma entrada de custo registrada para este produto."]),...(ctx.custoAtual!=null&&L.length&&Math.abs(ctx.custoAtual-L[0].custo)>0.009?[`O custo cadastrado hoje (R$ ${ctx.custoAtual.toFixed(2)}) é diferente do último lançado (R$ ${L[0].custo.toFixed(2)}).`]:[]),...(ctx.custoAtual>0&&Math.min(...[ctx.precoAtacado,ctx.precoVarejo].filter(v=>v>0),Infinity)<ctx.custoAtual?[`O custo cadastrado está acima do preço de venda (atacado ${ctx.precoAtacado!=null?"R$ "+ctx.precoAtacado.toFixed(2):"—"}, varejo ${ctx.precoVarejo!=null?"R$ "+ctx.precoVarejo.toFixed(2):"—"}).`]:[])]}); }catch(e){ res.status(500).json({erro:e.message}); } });
+app.get("/api/custos-entradas.csv",_permCustosEnt,(req,res)=>{ try{ const dias=Math.min(730,Math.max(1,Number(req.query.dias)||60)), desde=Date.now()-dias*86400000, q=x=>`"${String(x==null?"":x).replace(/"/g,'""')}"`, n=x=>x==null?"":String(Number(x).toFixed(2)).replace(".",","), ctxCache={}, ctxDe=id=>ctxCache[id]||(ctxCache[id]=_contextoPrecoProduto(id));
+  const linhas=[["Data","Produto","Código","Origem","Fornecedor","Nota","Quantidade (un)","Custo (un)","Custo anterior","Variação %","Custo cadastrado hoje","Preço atacado","Preço varejo","Registrado por"].map(q).join(";")];
+  _linhasCustos().linhas.filter(r=>r.em>=desde).forEach(r=>{ const c=ctxDe(r.produtoId); linhas.push([_diaBRk(r.em).split("-").reverse().join("/"),r.nome,c.codigo,r.origem,r.fornecedor,r.numeroNota,r.quantidade||"",n(r.custo),n(r.anterior),r.variacaoPct!=null?String(r.variacaoPct).replace(".",","):"",n(c.custoAtual),n(c.precoAtacado),n(c.precoVarejo),r.por].map(q).join(";")); });
+  res.set("Content-Type","text/csv; charset=utf-8"); res.set("Content-Disposition",'attachment; filename="historico_de_custos.csv"'); res.send("\ufeff"+linhas.join("\r\n")); }catch(e){ res.status(500).send(e.message); } });
+app.get("/historico-custos",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"historico-custos.html")); });
 // ===================== VENDA ABAIXO DO CUSTO =====================
 // Confere QUALQUER pedido (atacado, varejo, feito no sistema ou só no Bling): se algum item foi vendido por menos do que o custo cadastrado do produto, gera aviso e registra o prejuízo.
 // Quando confere: a cada aviso do Bling de pedido novo/alterado (webhook) e numa varredura periódica dos últimos dias (pega o que o aviso perder, ou se os avisos estiverem parados).
@@ -13617,7 +13650,8 @@ function _filtrarAbaixoCusto(q){ const D=lerAbaixoCusto(), dias=Math.min(365,Mat
   const L=Object.values(D.porId).filter(r=>r.data>=desde&&(!canal||r.canal.startsWith(canal))&&(st==="todos"||(st==="abertos"?(!r.resolvido&&!r.dispensado):(st==="dispensados"?!!r.dispensado:(st==="resolvidos"?!!r.resolvido:true))))).sort((a,b)=>(b.data||"").localeCompare(a.data||"")||b.prejuizo-a.prejuizo); return {D,L,dias}; }
 app.get("/api/vendas-abaixo-custo",_permAbaixo,(req,res)=>{ try{ const {L,dias}=_filtrarAbaixoCusto(req.query); const ab=L.filter(r=>!r.resolvido&&!r.dispensado);
   res.json({ok:true,dias,total:L.length,abertos:ab.length,prejuizoAberto:_round2(ab.reduce((a,r)=>a+r.prejuizo,0)),prejuizoListado:_round2(L.reduce((a,r)=>a+r.prejuizo,0)),
-    estatisticas:{conferidosDesdeQueSubiu:_acCont.conferidos,alertasGerados:_acCont.alertas,itensSemCustoCadastrado:_acCont.semCusto,errosDeConsulta:_acCont.erros,ultimaConferenciaEm:_acCont.ultimoEm||null,filaAgora:_acFila.size,avisosDoBlingChegando:_webhookAtivo("order.")},vendas:L.slice(0,300)}); }catch(e){ res.status(500).json({erro:e.message}); } });
+    estatisticas:{conferidosDesdeQueSubiu:_acCont.conferidos,alertasGerados:_acCont.alertas,itensSemCustoCadastrado:_acCont.semCusto,errosDeConsulta:_acCont.erros,ultimaConferenciaEm:_acCont.ultimoEm||null,filaAgora:_acFila.size,avisosDoBlingChegando:_webhookAtivo("order.")},
+    vendas:L.slice(0,300).map(r=>({...r,itens:r.itens.map(i=>({...i,ultimosCustos:((_linhasCustos().porProduto[String(i.produtoId)])||[]).slice(0,3).map(c=>({dia:_diaBRk(c.em),custo:c.custo,origem:c.origem,fornecedor:c.fornecedor,numeroNota:c.numeroNota}))}))}))}); }catch(e){ res.status(500).json({erro:e.message}); } });
 app.get("/api/vendas-abaixo-custo.csv",_permAbaixo,(req,res)=>{ try{ const {L}=_filtrarAbaixoCusto(req.query), q=x=>`"${String(x==null?"":x).replace(/"/g,'""')}"`, n=x=>String(Number(x||0).toFixed(2)).replace(".",","), dm=d=>String(d||"").split("-").reverse().join("/"); const linhas=[["Data","Pedido","Canal","Cliente","Situação","Produto","Qtd","Vendido por (un)","Custo (un)","Prejuízo (un)","Prejuízo (item)","Status"].map(q).join(";")];
   L.forEach(r=>r.itens.forEach(i=>linhas.push([dm(r.data),r.numero,r.canal,r.cliente,r.situacao,i.nome,i.quantidade,n(i.valorEfetivo),n(i.custo),n(i.prejuizoUn),n(i.prejuizo),r.dispensado?"dispensado":(r.resolvido?"resolvido":"aberto")].map(q).join(";"))));
   res.set("Content-Type","text/csv; charset=utf-8"); res.set("Content-Disposition",'attachment; filename="vendas_abaixo_do_custo.csv"'); res.send("\ufeff"+linhas.join("\r\n")); }catch(e){ res.status(500).send(e.message); } });
@@ -14294,7 +14328,7 @@ app.put("/api/produtos-gestao/:id",requireAcesso("acesso_produtos_gestao"),async
       try{ await bling(`/produtos/${id}`,{method:"PUT",body:JSON.stringify(payload)}); }catch(e){ return res.status(502).json({erro:"O Bling não aceitou a alteração do produto: "+e.message}); }
       const P=lerProdutosBling(); if(P.porId[id]){ if(novoPreco!=null) P.porId[id].p=novoPreco; if(novaSit) P.porId[id].s=novaSit; if(novoCusto!=null) P.porId[id].pc=novoCusto; salvarJSON(PRODUTOS_BLING_FILE,P); }
       if(novoCusto!=null){ feito.push(`preço de custo ${brlN(custoAntes)} → ${brlN(novoCusto)}`); try{ _metProdCache.clear(); }catch(e){}
-        try{ const M=lerJSON(CUSTOS_MANUAIS_FILE,{}); M[id]={custo:novoCusto,blingAntes:pd.precoCusto!=null?Number(pd.precoCusto):(custoAntes||null),em:Date.now(),por:quem,origem:"ficha do produto"}; salvarJSON(CUSTOS_MANUAIS_FILE,M); }catch(e){} }
+        try{ const M=lerJSON(CUSTOS_MANUAIS_FILE,{}); M[id]={custo:novoCusto,blingAntes:pd.precoCusto!=null?Number(pd.precoCusto):(custoAntes||null),em:Date.now(),por:quem,origem:"ficha do produto"}; salvarJSON(CUSTOS_MANUAIS_FILE,M); _logCustoManual(id,custoAntes,novoCusto,quem,"ficha do produto"); }catch(e){} }
       if(novoPreco!=null) feito.push(`preço de venda ${brlN(pd.preco)} → ${brlN(novoPreco)}`); if(novaSit&&novaSit!==pd.situacao) feito.push(novaSit==="A"?"ativado":"inativado");
     }
     if(b.estoqueBalanco!=null&&String(b.estoqueBalanco).trim()!==""){

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>B13 — Histórico de custos</title>
+<style>
+*{box-sizing:border-box;font-family:Arial,Helvetica,sans-serif;margin:0;padding:0}
+:root{--mag:#FF0082;--bg:#0f0d24;--card:#151233;--borda:#2c2660;--muted:#9a95c9;--ok:#3ce88a;--warn:#ffd23f;--ruim:#ff8aa3}
+body{background:var(--bg);color:#fff;min-height:100vh}
+.top{background:linear-gradient(180deg,#2b2870,#262366);border-bottom:3px solid var(--mag);padding:10px 16px;display:flex;align-items:center;gap:8px;position:sticky;top:0;z-index:5;flex-wrap:wrap}
+.top img{height:34px}.top .t{font-weight:900;font-size:16px}.top .sp{flex:1}
+.btn{border:none;border-radius:9px;font-weight:800;cursor:pointer;font-size:12px;padding:8px 12px;color:#fff;display:inline-block;text-decoration:none}
+.btn-ghost{background:#1c1846;border:1px solid #3a3480}
+.wrap{padding:14px;display:grid;gap:12px;max-width:1000px;margin:0 auto}
+.card{background:var(--card);border:1px solid var(--borda);border-radius:12px;padding:13px;min-width:0}
+.muted{color:var(--muted);font-size:12px;line-height:1.45}
+input[type=text]{width:100%;background:#0d0b22;border:1px solid #3a3480;border-radius:9px;padding:11px;color:#fff;font-size:15px;outline:none}
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-top:10px}
+.kpi{background:#120f2c;border:1px solid var(--borda);border-radius:12px;padding:10px}.kpi .v{font-size:19px;font-weight:900}.kpi .l{font-size:10.5px;color:var(--muted);font-weight:700;text-transform:uppercase;margin-top:3px}
+.chip{padding:6px 11px;border-radius:999px;border:1px solid #3a3480;background:#1c1846;font-size:12px;font-weight:800;cursor:pointer;display:inline-block;margin:0 4px 4px 0}.chip.on{background:var(--mag);border-color:var(--mag)}
+.tag{display:inline-block;font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:6px;margin-left:4px}.up{background:#3a1020;color:var(--ruim)}.dn{background:#11352a;color:#6be3a8}.ac{background:#3a2a0a;color:var(--warn)}.mn{background:#2a2060;color:#c9b8ff}
+.lin{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:flex-start;padding:9px 2px;border-top:1px solid #1d1946}.lin:first-child{border-top:none}.lin .n{flex:1 1 210px;min-width:0;line-height:1.35}.lin .v{text-align:right;flex:0 1 auto;margin-left:auto}
+.nome{font-weight:800;cursor:pointer;text-decoration:underline dotted #5a54a8}
+.hist{margin-top:8px;padding:10px;background:#120f2c;border:1px solid #2c2660;border-radius:10px}
+.vazio{padding:22px;text-align:center;color:var(--muted)}.spin{display:inline-block;width:18px;height:18px;border:3px solid #514c96;border-top-color:var(--mag);border-radius:50%;animation:spin .8s linear infinite;vertical-align:middle}@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+<script src="/nav.js"></script>
+</head>
+<body><script>
+  (function(){ if(!b13RequireLogin()) return; if(!b13BloquearSeSemAcesso("/historico-custos")) return;
+    document.addEventListener("DOMContentLoaded",function(){ const nav=document.createElement("div"); nav.innerHTML=b13RenderNav("/historico-custos"); document.body.insertBefore(nav,document.body.firstChild); }); })();
+</script>
+<div class="top"><img src="/logo"><div class="t">📜 Histórico de custos por entrada</div><div class="sp"></div><button class="btn btn-ghost" onclick="baixarCsv()">⬇️ CSV</button></div>
+<div class="wrap">
+  <div class="card"><input type="text" id="q" placeholder="Buscar produto (nome ou código)" oninput="digitou()">
+    <div style="margin-top:10px"><span id="fPer"></span></div><div><span id="fSo"></span></div>
+    <div class="kpis" id="kpis"></div></div>
+  <div id="painelProduto"></div>
+  <div class="card" id="lista"><div class="vazio"><span class="spin"></span></div></div>
+</div>
+<script>
+const B = location.protocol.indexOf("http") === 0 ? "" : "https://app.b13bebidas.com.br";
+const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+function token() { try { return (b13GetSession() || {}).token || ""; } catch (e) { return ""; } }
+async function api(p) { const r = await fetch(B + p, { headers: { "X-Auth-Token": token() } }); const j = await r.json().catch(() => ({})); return { ok: r.ok, j }; }
+const brl = n => n == null ? "—" : "R$ " + Number(n).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const dmy = d => d ? d.split("-").reverse().join("/") : "—";
+let F = { dias: 60, so: "" }, _t = null;
+function chip(grupo, v, t) { const val = typeof v === "number" ? v : "'" + String(v).replace(/['"\\]/g, "") + "'"; return `<span class="chip ${F[grupo] === v ? "on" : ""}" onclick="F.${grupo}=${val};carregar()">${t}</span>`; }
+function digitou() { clearTimeout(_t); _t = setTimeout(carregar, 350); }
+const qs = () => `dias=${F.dias}&so=${F.so}&q=${encodeURIComponent(document.getElementById("q").value.trim())}`;
+function varTag(r) { if (r.variacaoPct == null) return ""; if (r.variacaoPct > 0.05) return `<span class="tag up">▲ +${r.variacaoPct}%</span>`; if (r.variacaoPct < -0.05) return `<span class="tag dn">▼ ${r.variacaoPct}%</span>`; return `<span class="tag mn">= igual</span>`; }
+function linhaHtml(r, comNome) {
+  return `<div class="lin"><div class="n">${comNome ? `<span class="nome" onclick="abrirProduto('${esc(r.produtoId)}')">${esc(r.nome || "produto " + r.produtoId)}</span><br>` : ""}<span class="muted">${dmy(r.dia)} · ${esc(r.origem)}${r.fornecedor ? " · " + esc(r.fornecedor) : ""}${r.numeroNota ? " · NF " + esc(r.numeroNota) : ""}${r.quantidade ? " · " + r.quantidade + " un" : ""}${r.por ? " · " + esc(r.por) : ""}</span></div>
+    <div class="v"><b style="font-size:16px">${brl(r.custo)}</b>${varTag(r)}${r.acimaDoPreco ? `<span class="tag ac">⚠️ acima do preço ${r.acimaDoPreco}</span>` : ""}<br><span class="muted">${r.anterior != null ? "antes " + brl(r.anterior) : "primeiro registro"}</span></div></div>`;
+}
+async function carregar() {
+  document.getElementById("fPer").innerHTML = `<span class="muted">Período </span>` + chip("dias", 30, "30 dias") + chip("dias", 60, "60 dias") + chip("dias", 180, "6 meses") + chip("dias", 365, "1 ano");
+  document.getElementById("fSo").innerHTML = `<span class="muted">Mostrar </span>` + chip("so", "", "Todos") + chip("so", "aumentos", "Só aumentos") + chip("so", "acima", "Só custo acima do preço de venda");
+  const { ok, j } = await api("/api/custos-entradas?" + qs()); if (!ok) { document.getElementById("lista").innerHTML = `<div class="vazio">${esc(j.erro || "Não consegui carregar.")}</div>`; return; }
+  const r = j.resumo; document.getElementById("kpis").innerHTML = `<div class="kpi"><div class="v">${r.linhas}</div><div class="l">Lançamentos</div></div><div class="kpi"><div class="v">${r.produtos}</div><div class="l">Produtos</div></div><div class="kpi"><div class="v" style="color:var(--ruim)">${r.aumentos}</div><div class="l">Aumentos</div></div><div class="kpi"><div class="v" style="color:var(--ok)">${r.quedas}</div><div class="l">Quedas</div></div><div class="kpi"><div class="v" style="color:var(--warn)">${r.custoAcimaDoPreco}</div><div class="l">Custo acima do preço</div></div>`;
+  document.getElementById("lista").innerHTML = j.linhas.length ? j.linhas.map(x => linhaHtml(x, true)).join("") + (r.linhas > j.linhas.length ? `<div class="muted" style="padding:8px">Mostrando os ${j.linhas.length} mais recentes de ${r.linhas}. Use a busca ou o CSV para ver tudo.</div>` : "") : `<div class="vazio">Nenhum lançamento de custo neste filtro.</div>`;
+}
+async function abrirProduto(id) {
+  const box = document.getElementById("painelProduto"); box.innerHTML = `<div class="card"><span class="spin"></span></div>`; box.scrollIntoView({ behavior: "smooth", block: "start" });
+  const { ok, j } = await api("/api/custos-entradas/produto/" + encodeURIComponent(id) + "?limite=20"); if (!ok) { box.innerHTML = `<div class="card"><div class="vazio">${esc(j.erro || "Não consegui carregar.")}</div></div>`; return; }
+  const p = j.produto; box.innerHTML = `<div class="card"><div style="display:flex;gap:8px;align-items:flex-start"><div style="flex:1"><b style="font-size:16px">${esc(p.nome)}</b> <span class="muted">${esc(p.codigo)}</span></div><button class="btn btn-ghost" onclick="document.getElementById('painelProduto').innerHTML=''">✕</button></div>
+    <div class="kpis"><div class="kpi"><div class="v">${brl(p.custoAtual)}</div><div class="l">Custo cadastrado hoje</div></div><div class="kpi"><div class="v">${brl(p.precoAtacado)}</div><div class="l">Preço atacado</div></div><div class="kpi"><div class="v">${brl(p.precoVarejo)}</div><div class="l">Preço varejo</div></div></div>
+    <div class="muted" style="margin:10px 0 4px">${j.leitura.map(esc).join("<br>")}</div>
+    <div class="hist">${j.historico.length ? j.historico.map(x => linhaHtml(x, false)).join("") : `<div class="vazio">Sem lançamentos de custo para este produto.</div>`}</div></div>`;
+}
+async function baixarCsv() { const r = await fetch(B + "/api/custos-entradas.csv?dias=" + F.dias, { headers: { "X-Auth-Token": token() } }); if (!r.ok) { alert("Não consegui gerar o CSV."); return; } const b = await r.blob(), a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = "historico_de_custos.csv"; document.body.appendChild(a); a.click(); a.remove(); }
+const _p = new URLSearchParams(location.search); if (_p.get("q")) document.getElementById("q").value = _p.get("q");
+carregar(); if (_p.get("produto")) abrirProduto(_p.get("produto"));
+</script>
+</body>
+</html>
