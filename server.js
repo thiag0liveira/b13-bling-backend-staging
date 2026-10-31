@@ -928,6 +928,13 @@ const COMPROV_DIAS_MANTER = Number(process.env.COMPROV_DIAS_MANTER || 60);      
 const COMPROV_LIMITE_MB  = Number(process.env.COMPROV_LIMITE_MB  || 2048);      // teto 2 GB
 // A faxina NUNCA apaga foto/vídeo enviado nas últimas COMPROV_PROTEGER_HORAS (antes, com o volume abaixo da meta de espaço livre, ela apagava até o vídeo que acabava de ser enviado e a ficha do pedido mostrava "arquivo apagado")
 const COMPROV_PROTEGER_HORAS = Number(process.env.COMPROV_PROTEGER_HORAS || 72);
+// Válvula de segurança: quando o volume está perto de encher, abre espaço apagando os arquivos MAIS ANTIGOS (mesmo com menos de 72 h), mas nunca os da última hora, para que os envios novos continuem sendo salvos.
+const COMPROV_INTOCAVEL_MIN = Number(process.env.COMPROV_INTOCAVEL_MIN || 60);
+const _reservaDisco=total=>Math.min(300*1048576,Math.max(40*1048576,(Number(total)||0)*0.10));
+const UPLOADS_LOG_FILE=`${DATA_DIR}/uploads_midia.jsonl`;
+function _logUpload(o){ try{ fs.appendFileSync(UPLOADS_LOG_FILE,JSON.stringify({em:Date.now(),...o})+"\n"); if(Math.random()<0.02){ const st=fs.statSync(UPLOADS_LOG_FILE); if(st.size>1500000){ const L=fs.readFileSync(UPLOADS_LOG_FILE,"utf8").split("\n").filter(Boolean).slice(-3000); fs.writeFileSync(UPLOADS_LOG_FILE,L.join("\n")+"\n"); } } }catch(e){} }
+function _avisoVolumeCheio(qtd,bytes,info,semEspaco){ try{ registrarAviso({tipo:"volume_cheio",titulo:semEspaco?"VOLUME CHEIO: vídeos e fotos NÃO estão sendo salvos":`Volume do servidor quase cheio: ${qtd} arquivo(s) de conferência foram apagados para caber os novos`,origem:"Servidor",fingerprint:`volumecheio-${_diaBRk(Date.now())}-${semEspaco?"s":"a"}`,
+  oQueFazer:`O volume do servidor está com ${info?info.pctLivre+"% livre ("+Math.round(info.livre/1048576)+" MB)":"pouco espaço"}. ${semEspaco?"Não deu para liberar espaço sem apagar arquivos da última hora, então os envios foram recusados.":`Para os envios novos continuarem sendo salvos, o sistema apagou ${qtd} arquivo(s) mais antigos (${(bytes/1048576).toFixed(0)} MB), mesmo com menos de ${COMPROV_PROTEGER_HORAS/24} dias.`} Aumente o tamanho do volume no Railway ou libere o que mais ocupa espaço (veja https://app.b13bebidas.com.br/api/saude/disco).`}); }catch(e){} }
 const COMPROV_APAGADOS_FILE = `${DATA_DIR}/comprovantes_apagados.jsonl`; // quem foi apagado, quando e por quê (a ficha explica o motivo)
 function _logApagado(nome,bytes,motivo){ try{ const d=_discoInfo(); fs.appendFileSync(COMPROV_APAGADOS_FILE,JSON.stringify({em:Date.now(),nome,bytes,motivo,livrePct:d?d.pctLivre:null})+"\n"); }catch(e){} }
 let _apagadosCache={mt:0,mapa:{}};
@@ -960,16 +967,17 @@ function _apagarTemporarios(){
   let n=0,bytes=0; try{ fs.readdirSync(DATA_DIR).forEach(f=>{ if(/\.tmp(-\d+)?$/.test(f)||/\.tmp-\d+$/.test(f)){ try{ const p=path.join(DATA_DIR,f); bytes+=fs.statSync(p).size; fs.unlinkSync(p); n++; }catch(e){} } }); }catch(e){}
   return {n,bytes};
 }
-function _liberarComprovantes(alvoLivreBytes){
+function _liberarComprovantes(alvoLivreBytes,opts){
   const info=_discoInfo(); if(!info) return {apagados:0,bytes:0,protegidos:0,faltou:0};
   let falta=alvoLivreBytes-info.livre; if(falta<=0) return {apagados:0,bytes:0,protegidos:0,faltou:0};
   const agora=Date.now(), prot=COMPROV_PROTEGER_HORAS*3600e3; let arqs=[]; try{ arqs=fs.readdirSync(COMPROVANTES_DIR).map(f=>{ const p=path.join(COMPROVANTES_DIR,f); try{ const st=fs.statSync(p); if(!st.isFile()) return null; return {p,f,size:st.size,mtime:st.mtimeMs,video:/\.(mp4|mov|webm|3gp|mkv|avi)$/i.test(f)?1:0,recente:agora-st.mtimeMs<prot}; }catch(e){ return null; } }).filter(Boolean); }catch(e){}
   const ordem=(a,b)=>(b.video-a.video)||(a.mtime-b.mtime); // vídeos mais antigos primeiro, depois fotos mais antigas
   let apagados=0,bytes=0; const apaga=(a,motivo)=>{ try{ fs.unlinkSync(a.p); try{ fs.unlinkSync(path.join(MINIATURAS_DIR,a.f+".jpg")); }catch(e){} _logApagado(a.f,a.size,motivo); apagados++; bytes+=a.size; falta-=a.size; }catch(e){} };
   for(const a of arqs.filter(x=>!x.recente).sort(ordem)){ if(falta<=0) break; apaga(a,`limpeza de disco (volume com ${info.pctLivre}% livre, meta ${Math.round(alvoLivreBytes/info.total*100)}%)`); }
-  // só em emergência de verdade (menos de 80 MB livres: o caixa pararia de gravar) mexe nos recentes, e nunca nos dos últimos 30 minutos
-  if(falta>0&&_discoInfo().livre<80*1048576) for(const a of arqs.filter(x=>x.recente&&agora-x.mtime>30*60000).sort((x,y)=>x.mtime-y.mtime)){ if(_discoInfo().livre>=80*1048576) break; apaga(a,"disco quase sem espaço (emergência)"); }
-  return {apagados,bytes,protegidos:arqs.filter(x=>x.recente).length,faltou:Math.max(0,falta)};
+  let emerg=0, emergBytes=0;
+ if(falta>0&&opts&&opts.emergencia){ const intoc=COMPROV_INTOCAVEL_MIN*60000; for(const a of arqs.filter(x=>x.recente&&agora-x.mtime>intoc).sort((x,y)=>x.mtime-y.mtime)){ if(falta<=0) break; const antes=apagados; apaga(a,"volume cheio: espaço aberto para os envios novos (emergência)"); if(apagados>antes){ emerg++; emergBytes+=a.size; } } }
+ if(emerg){ try{ _avisoVolumeCheio(emerg,emergBytes,_discoInfo(),false); }catch(e){} }
+ return {apagados,bytes,emergencia:emerg,protegidos:arqs.filter(x=>x.recente).length,faltou:Math.max(0,falta)};
 }
 // AVISO DE DISCO (tela de Avisos): atenção abaixo de 30% livre e crítico abaixo de 15%, medido ANTES da faxina
 // (é o que mostra a pressão real). No máximo 1 aviso de cada nível por dia (fingerprint por nível + dia).
@@ -992,8 +1000,9 @@ function faxinaDisco(motivo,urgente){
   try{ limparComprovantesAntigos(); }catch(e){}
   const meio=_discoInfo();
   if(meio){ const alvo=Math.max(meio.total*DISCO_ALVO_LIVRE_PCT/100,300*1048576); if(meio.livre<alvo) comp=_liberarComprovantes(Math.min(alvo,meio.total*0.5)); }
-  const depois=_discoInfo();
-  const liberadoMB=antes&&depois?+((depois.livre-antes.livre)/1048576).toFixed(1):null;
+  { const m2=_discoInfo(); if(m2&&m2.livre<_reservaDisco(m2.total)) comp=Object.assign({},comp,_liberarComprovantes(_reservaDisco(m2.total)*2,{emergencia:true})); }
+ const depois=_discoInfo();
+ const liberadoMB=antes&&depois?+((depois.livre-antes.livre)/1048576).toFixed(1):null;
   try{ _alertaDisco(antes,depois,liberadoMB,comp); }catch(e){}
   if(tmp.n||comp.apagados||urgente||(liberadoMB||0)>0.5) console.warn(`[disco] faxina (${motivo}): ${liberadoMB} MB liberados (inclui fotos/vídeos antigos e temporários); livre agora ${depois?(depois.livre/1048576).toFixed(0)+" MB ("+depois.pctLivre+"%)":"?"}`);
   return {motivo,antes,depois,liberadoMB,temporarios:tmp,comprovantes:comp};
@@ -1095,20 +1104,25 @@ function extComprovante(mime,tipo){
 }
 app.post("/api/comprovante-arquivo/:id", rateLimit({janelaMs:60000,max:80,prefixo:"comprovante-arq"}), (req,res)=>{
   const idPed=String(req.params.id||"").replace(/[^A-Za-z0-9_-]/g,"").slice(0,40);
-  const recusar=(code,erro)=>{ res.set("Connection","close"); res.status(code).json({erro}); req.resume(); };
+  const t0=Date.now(); let mimeLog="", tipoLog="", clLog=0;
+  const recusar=(code,erro)=>{ _logUpload({pedido:idPed,tipo:tipoLog,mime:mimeLog,mb:+(clLog/1048576).toFixed(1),status:code,ok:false,erro:String(erro).slice(0,140),ms:Date.now()-t0,ua:String(req.headers["user-agent"]||"").slice(0,90)}); res.set("Connection","close"); res.status(code).json({erro}); req.resume(); };
   if(!idPed) return recusar(400,"Pedido inválido.");
   const mime=String(req.headers["content-type"]||"").split(";")[0].trim().toLowerCase();
   const ehVideo=mime.startsWith("video/"), ehFoto=mime.startsWith("image/");
   if(!ehVideo && !ehFoto && mime!=="application/octet-stream") return recusar(415,"Só aceito foto ou vídeo.");
   const tipo=ehVideo?"video":(ehFoto?"foto":(String(req.query.tipo||"")==="video"?"video":"foto"));
   const limite=tipo==="video"?LIM_COMP_VIDEO:LIM_COMP_FOTO;
-  const cl=Number(req.headers["content-length"]||0);
+  const cl=Number(req.headers["content-length"]||0); mimeLog=mime; tipoLog=tipo; clLog=cl;
+  { const info=_discoInfo(), preciso=(cl>0?cl:30*1048576)+_reservaDisco(info?info.total:0);
+    if(info&&info.livre<preciso){ _liberarComprovantes(preciso,{emergencia:true}); const d2=_discoInfo();
+      if(d2&&d2.livre<(cl>0?cl:0)+10*1048576){ _avisoVolumeCheio(0,0,d2,true); return recusar(507,"O servidor está sem espaço para guardar o arquivo agora. Avise o responsável: o volume está cheio."); } } }
   if(cl>limite) return recusar(413,`Arquivo grande demais (${(cl/1048576).toFixed(0)} MB). O limite é ${limite/1048576} MB para ${tipo==="video"?"vídeo":"foto"}; grave um trecho mais curto.`);
   const evento=/^[a-z_]{3,40}$/.test(String(req.query.evento||""))?String(req.query.evento):(tipo==="video"?"video_conferencia":"foto_conferencia");
   const funcionarioId=String(req.query.funcionarioId||"").slice(0,40)||null, funcionarioNome=String(req.query.funcionarioNome||"").slice(0,60)||null;
   const ext=extComprovante(mime,tipo);
   const nomeArq=`${idPed}_${Date.now()}_${crypto.randomBytes(3).toString("hex")}.${ext}`;
   const caminho=path.join(COMPROVANTES_DIR,nomeArq);
+  try{ fs.mkdirSync(COMPROVANTES_DIR,{recursive:true}); }catch(e){}
   const out=fs.createWriteStream(caminho);
   let bytes=0, encerrado=false;
   const abortar=(code,erro)=>{
@@ -1120,13 +1134,14 @@ app.post("/api/comprovante-arquivo/:id", rateLimit({janelaMs:60000,max:80,prefix
   req.on("data",c=>{ bytes+=c.length; if(bytes>limite) abortar(413,`Arquivo grande demais. O limite é ${limite/1048576} MB para ${tipo==="video"?"vídeo":"foto"}.`); });
   req.on("aborted",()=>abortar(499,"Envio cancelado."));
   req.on("error",()=>abortar(500,"Falha na conexão durante o envio."));
-  out.on("error",()=>abortar(500,"Não consegui gravar o arquivo no servidor."));
+  out.on("error",e=>{ if(e&&e.code==="ENOSPC"){ try{ const d=_discoInfo(); _liberarComprovantes((d?_reservaDisco(d.total):0)*2+(cl||0),{emergencia:true}); _avisoVolumeCheio(0,0,_discoInfo(),true); }catch(x){} abortar(507,"O servidor ficou sem espaço durante o envio. Tente de novo em instantes."); } else abortar(500,"Não consegui gravar o arquivo no servidor."); });
   out.on("finish",()=>{
     if(encerrado) return; encerrado=true;
-    if(!bytes){ fs.unlink(caminho,()=>{}); return res.status(400).json({erro:"O arquivo chegou vazio."}); }
-    { let gravado=-1; try{ gravado=fs.statSync(caminho).size; }catch(e){} if(gravado!==bytes){ fs.unlink(caminho,()=>{}); return res.status(500).json({erro:`O arquivo não foi gravado por completo no servidor (${gravado} de ${bytes} bytes). Tente de novo.`}); } } // só responde "ok" se o arquivo está inteiro no disco
+    if(!bytes){ fs.unlink(caminho,()=>{}); _logUpload({pedido:idPed,tipo,mime,mb:0,status:400,ok:false,erro:"arquivo vazio",ms:Date.now()-t0}); return res.status(400).json({erro:"O arquivo chegou vazio."}); }
+    { let gravado=-1; try{ gravado=fs.statSync(caminho).size; }catch(e){} if(gravado!==bytes){ fs.unlink(caminho,()=>{}); _logUpload({pedido:idPed,tipo,mime,mb:+(bytes/1048576).toFixed(1),status:500,ok:false,erro:`gravou ${gravado} de ${bytes} bytes`,ms:Date.now()-t0}); return res.status(500).json({erro:`O arquivo não foi gravado por completo no servidor (${gravado} de ${bytes} bytes). Tente de novo.`}); } } // só responde "ok" se o arquivo está inteiro no disco
     const url=`/comprovantes/${nomeArq}`;
     addLog(idPed,evento,funcionarioId,funcionarioNome,{tipo,url,mime:mime||null,bytes});
+    _logUpload({pedido:idPed,tipo,mime,mb:+(bytes/1048576).toFixed(1),status:200,ok:true,ms:Date.now()-t0,ua:String(req.headers["user-agent"]||"").slice(0,90)});
     res.json({ok:true,url,tipo,bytes});
     // vídeo grande pode estourar o teto do volume antes da limpeza das 12h: confere na hora
     setImmediate(()=>{ try{ if(_statComprovantes().totalBytes>_tetoComprovantesBytes()) limparComprovantesAntigos(); faxinaDisco("depois de um envio de arquivo"); }catch(e){} });
@@ -4569,7 +4584,9 @@ app.get("/api/diag/midias-recentes",requireAdmin,(req,res)=>{ try{ const dias=Ma
   if(total-ok>0) leitura.push(`${ausentes.filter(a=>a.apagadoEm).length} dos que faltam têm registro de apagamento (veja o motivo na lista); ${ausentes.filter(a=>!a.apagadoEm).length} sumiram sem registro.`);
   if(antigo) leitura.push(`O arquivo mais antigo guardado agora tem ${((Date.now()-antigo)/86400000).toFixed(1)} dias: é o tempo REAL que as gravações estão ficando (o limite normal é ${COMPROV_DIAS_MANTER} dias, mas o teto de espaço de ${Math.round(_tetoComprovantesBytes()/1048576)} MB apaga os mais antigos antes disso quando o volume de gravações é grande).`);
   if(d&&d.pctLivre<DISCO_ALVO_LIVRE_PCT) leitura.push(`O volume está com ${d.pctLivre}% livre, abaixo da meta de ${DISCO_ALVO_LIVRE_PCT}%: arquivos com mais de ${COMPROV_PROTEGER_HORAS/24} dias são apagados a cada rodada da limpeza.`);
-  res.json({ok:true,dias,total,noDisco:ok,faltando:total-ok,videos,videosNoDisco:videosOk,mbNoDisco:+(bytesOk/1048576).toFixed(1),porDia,disco:d?{livreMB:+(d.livre/1048576).toFixed(0),pctLivre:d.pctLivre}:null,arquivoMaisAntigoDias:antigo?+((Date.now()-antigo)/86400000).toFixed(1):null,leitura,ausentes:ausentes.slice(0,80)}); }catch(e){ res.status(500).json({erro:e.message}); } });
+  let tentativas=null; try{ const L=fs.readFileSync(UPLOADS_LOG_FILE,"utf8").trim().split("\n").slice(-4000).map(l=>{ try{ return JSON.parse(l); }catch(e){ return null; } }).filter(o=>o&&o.em>=desde), falhas=L.filter(o=>!o.ok), por={}; falhas.forEach(o=>{ const k=`${o.status} ${o.erro}`; por[k]=(por[k]||0)+1; });
+    tentativas={enviosRecebidos:L.length,deuCerto:L.length-falhas.length,falharam:falhas.length,motivosDasFalhas:por,ultimasFalhas:falhas.slice(-10).reverse().map(o=>({quando:dh(o.em),pedido:o.pedido,tipo:o.tipo,mb:o.mb,status:o.status,erro:o.erro,aparelho:o.ua||""}))}; if(falhas.length) leitura.push(`Dos ${L.length} envios que chegaram ao servidor nesse período, ${falhas.length} FALHARAM. Motivo mais comum: ${Object.entries(por).sort((a,b)=>b[1]-a[1])[0][0]}.`); }catch(e){}
+  res.json({ok:true,dias,total,noDisco:ok,faltando:total-ok,videos,videosNoDisco:videosOk,tentativas,mbNoDisco:+(bytesOk/1048576).toFixed(1),porDia,disco:d?{livreMB:+(d.livre/1048576).toFixed(0),pctLivre:d.pctLivre}:null,arquivoMaisAntigoDias:antigo?+((Date.now()-antigo)/86400000).toFixed(1):null,leitura,ausentes:ausentes.slice(0,80)}); }catch(e){ res.status(500).json({erro:e.message}); } });
 // ===== NFC-e E ALTERAÇÃO DO PEDIDO =====
 // Uma NFC-e autorizada NÃO muda quando o pedido muda. Situação da nota no Bling (mesmos códigos usados em /api/nfce/emitidas-bling): 5 autorizada; 2 cancelada, 4 rejeitada, 9 denegada, 1 pendente (rascunho) não valem mais.
 const _NFCE_SIT_SEM_VALOR=new Set([1,2,4,9]);
