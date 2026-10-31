@@ -30,22 +30,19 @@ select,input[type=text],input[type=number]{width:100%;background:#0d0b22;border:
 .pl{width:100%;height:100%;border:0.7mm solid #FF0082;border-radius:2.4mm;display:flex;flex-direction:column;overflow:hidden;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .pl-top{background:#FF0082;color:#fff;display:flex;align-items:center;justify-content:space-between;font-weight:900;letter-spacing:.3mm;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .pl-nome{font-weight:900;text-transform:uppercase;line-height:1.08;color:#1a1740}
-.pl-precos{flex:1;display:flex;align-items:stretch;gap:1.2mm}
-.pl-p{flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;min-width:0}
+.pl-meio{flex:1;display:flex;flex-direction:column;min-width:0}
+.pl-precos{flex:1;display:flex;align-items:center;justify-content:center}
+.pl-p{display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;min-width:0}
 .pl-lbl{font-weight:800;color:#555;text-transform:uppercase}
-.pl-de{color:#777;text-decoration:line-through;font-weight:700}
 .pl-por{display:flex;align-items:flex-start;justify-content:center;font-weight:900;color:#d4005f;line-height:.9}
 .pl-por b{font-size:.38em;margin-top:.25em;margin-right:.1em}.pl-por i{font-style:normal;font-size:.5em;margin-top:.1em}
 .pl-rod{color:#444;display:flex;justify-content:space-between;gap:2mm;font-weight:700}
 /* pequena 100x35 */
-.s .pl-top{font-size:7.5pt;padding:.5mm 2mm}.s .pl-nome{font-size:9.5pt;padding:.8mm 2mm 0}.s .pl-nome.l{font-size:8pt}.s .pl-precos{padding:0 1.5mm}.s .pl-lbl{font-size:6pt}.s .pl-de{font-size:7pt}.s .pl-por{font-size:30pt}.s .pl-rod{font-size:6pt;padding:0 2mm .7mm}
-.s .dois .pl-por{font-size:22pt}
+.s .pl-top{font-size:7.5pt;padding:.5mm 2mm}.s .pl-nome{font-size:9.5pt;padding:.8mm 2mm 0}.s .pl-nome.l{font-size:8pt}.s .pl-precos{padding:0 1.5mm}.s .pl-por{font-size:32pt}.s .pl-rod{font-size:6pt;padding:0 2mm .7mm}
 /* média 100x93 */
-.m .pl-top{font-size:13pt;padding:1.4mm 4mm}.m .pl-nome{font-size:17pt;padding:2.5mm 4mm 0}.m .pl-nome.l{font-size:14pt}.m .pl-precos{padding:0 3mm}.m .pl-lbl{font-size:10pt}.m .pl-de{font-size:13pt}.m .pl-por{font-size:50pt}.m .pl-rod{font-size:9pt;padding:0 4mm 2mm}
-.m .dois .pl-por{font-size:38pt}
+.m .pl-top{font-size:13pt;padding:1.4mm 4mm}.m .pl-meio,.g .pl-meio{justify-content:center;align-items:center;text-align:center}.m .pl-nome{font-size:18pt;padding:0 5mm;text-align:center}.m .pl-nome.l{font-size:15pt}.m .pl-precos{flex:none;padding:3mm 3mm 0}.m .pl-por{font-size:58pt}.m .pl-rod{font-size:9pt;padding:0 4mm 2mm}
 /* cartaz A4 200x280 */
-.g .pl-top{font-size:34pt;padding:5mm 10mm;border-bottom:0}.g .pl-nome{font-size:50pt;padding:9mm 10mm 0}.g .pl-nome.l{font-size:40pt}.g .pl-precos{padding:0 8mm}.g .pl-lbl{font-size:26pt}.g .pl-de{font-size:36pt}.g .pl-por{font-size:150pt}.g .pl-rod{font-size:20pt;padding:0 10mm 7mm}
-.g .dois .pl-por{font-size:105pt}
+.g .pl-top{font-size:34pt;padding:5mm 10mm;border-bottom:0}.g .pl-nome{font-size:54pt;padding:0 12mm;text-align:center}.g .pl-nome.l{font-size:42pt}.g .pl-precos{flex:none;padding:10mm 8mm 0}.g .pl-por{font-size:165pt}.g .pl-rod{font-size:20pt;padding:0 10mm 7mm}
 @media print{
   @page{size:A4;margin:5mm}
   html body{background:#fff;min-height:0;padding:0!important;margin:0!important}.noprint{display:none!important}.wrap{max-width:none;padding:0;display:block}#folha{background:#fff;padding:0}
@@ -79,7 +76,7 @@ async function api(p) { const r = await fetch(B + p, { headers: { "X-Auth-Token"
 const dm = d => d ? d.split("-").reverse().slice(0, 2).join("/") : "";
 const dmy = d => d ? d.split("-").reverse().join("/") : "";
 let PROMOS = [], D = null, TIPO = "varejo", MODELO = "s";
-const TIPOS = [["varejo", "Varejo"], ["atacado", "Atacado"], ["ambos", "Varejo e atacado"]], MODELOS = [["s", "Pequena · 16 por folha (100×35 mm)"], ["m", "Média · 6 por folha"], ["g", "Cartaz A4 · 1 por folha"]];
+const TIPOS = [["varejo", "Só os do varejo"], ["atacado", "Só os do atacado"], ["ambos", "Todos"]], MODELOS = [["s", "Pequena · 16 por folha (100×35 mm)"], ["m", "Média · 6 por folha"], ["g", "Cartaz A4 · 1 por folha"]];
 function chips() {
   document.getElementById("cTipo").innerHTML = TIPOS.map(t => `<span class="${TIPO === t[0] ? "on" : ""}" onclick="TIPO='${t[0]}';chips();renderLista()">${t[1]}</span>`).join("");
   document.getElementById("cModelo").innerHTML = MODELOS.map(t => `<span class="${MODELO === t[0] ? "on" : ""}" onclick="MODELO='${t[0]}';chips()">${t[1]}</span>`).join("");
@@ -101,17 +98,15 @@ const aplicaTipo = (i, t) => t === "ambos" ? (i.varejo || i.atacado) : i[t];
 function renderLista() {
   if (!D) return; const guard = {}; document.querySelectorAll("#lista .lin").forEach(l => { guard[l.dataset.id] = { on: l.querySelector("input[type=checkbox]").checked, q: l.querySelector("input[type=number]").value, ok: l.dataset.ok === "1" }; });
   document.getElementById("lista").innerHTML = D.itens.map((i, k) => { const ok = !!aplicaTipo(i, TIPO), g = guard[i.produtoId], on = g && g.ok ? g.on : ok, q = g ? g.q : 1; // produto que passa a valer no tipo escolhido volta marcado
-    const v = i.varejo ? "varejo R$ " + i.varejo.promo.toFixed(2).replace(".", ",") + (i.varejo.normal ? " (de " + i.varejo.normal.toFixed(2).replace(".", ",") + ")" : "") : "", a = i.atacado ? "atacado R$ " + i.atacado.promo.toFixed(2).replace(".", ",") + (i.atacado.normal ? " (de " + i.atacado.normal.toFixed(2).replace(".", ",") + ")" : "") : "";
+    const pr = (i.varejo || i.atacado) ? "R$ " + (i.varejo || i.atacado).promo.toFixed(2).replace(".", ",") : "sem preço", v = pr + " · vale para " + (i.varejo && i.atacado ? "varejo e atacado" : i.varejo ? "o varejo" : "o atacado"), a = "";
     return `<div class="lin ${ok ? "" : "off"}" data-id="${esc(i.produtoId)}" data-ok="${ok ? 1 : 0}"><input type="checkbox" ${on && ok ? "checked" : ""} ${ok ? "" : "disabled"}><div class="n"><b>${esc(i.nome)}</b>${i.saborDe ? ` <span class="muted">· sabor</span>` : ""}<div class="muted">${[v, a].filter(Boolean).join(" · ") || "sem preço"}${ok ? "" : " · não vale para " + (TIPO === "varejo" ? "o varejo" : "o atacado")}</div></div><input type="number" min="1" max="99" value="${q}" title="Quantas etiquetas"></div>`; }).join("");
 }
 function marcar(v) { document.querySelectorAll("#lista .lin input[type=checkbox]:not(:disabled)").forEach(c => c.checked = v); }
 function precoHtml(v) { const [r, c] = Number(v).toFixed(2).split("."); return `<span class="pl-por"><b>R$</b>${Number(r).toLocaleString("pt-BR")}<i>,${c}</i></span>`; }
-function celulaPreco(lbl, o, mostrarLbl) { const de = o.normal && o.normal > o.promo + 0.004 ? `<span class="pl-de">de R$ ${o.normal.toFixed(2).replace(".", ",")}</span>` : ""; return `<div class="pl-p">${mostrarLbl ? `<span class="pl-lbl">${lbl}</span>` : ""}${de}${precoHtml(o.promo)}</div>`; }
 function etiqueta(i, tipo) {
-  const v = (tipo !== "atacado") ? i.varejo : null, a = (tipo !== "varejo") ? i.atacado : null, dois = !!(v && a), p = D.promocao, obs = document.getElementById("obs").value.trim();
-  const nome = String(i.nome || ""), val = p.fim ? "Válido até " + dmy(p.fim) : "";
-  return `<div class="pl"><div class="pl-top"><span>🔥 PROMOÇÃO</span><span>${dois ? "" : (v ? "VAREJO" : "ATACADO")}</span></div><div class="pl-nome ${nome.length > 34 ? "l" : ""}">${esc(nome)}</div>
-    <div class="pl-precos ${dois ? "dois" : ""}">${v ? celulaPreco("Varejo", v, dois) : ""}${a ? celulaPreco("Atacado", a, dois) : ""}</div><div class="pl-rod"><span>${esc(val)}</span><span>${esc(obs)}</span></div></div>`;
+  const o = i.varejo || i.atacado, p = D.promocao, obs = document.getElementById("obs").value.trim(), nome = String(i.nome || ""), val = p.fim ? "Válido até " + dmy(p.fim) : "";
+  const tag = tipo === "varejo" ? "VAREJO" : tipo === "atacado" ? "ATACADO" : ""; // com "Todos" a etiqueta não leva o tipo
+  return `<div class="pl"><div class="pl-top"><span>🔥 PROMOÇÃO</span><span>${tag}</span></div><div class="pl-meio"><div class="pl-nome ${nome.length > 34 ? "l" : ""}">${esc(nome)}</div><div class="pl-precos">${precoHtml(o.promo)}</div></div><div class="pl-rod"><span>${esc(val)}</span><span>${esc(obs)}</span></div></div>`;
 }
 function gerar() {
   if (!D) { alert("Escolha uma promoção."); return; } const cel = [];
