@@ -1324,6 +1324,7 @@ window.B13_NAV_LINKS=[
   {grupo:"CADASTROS",href:"/fotos-produtos",label:"📷 Fotos e Imagens dos Produtos",acoes:["acesso_produtos_gestao","acesso_imagens","admin"]},
   {grupo:"CADASTROS",href:"/etiquetas",label:"🏷️ Etiquetas",acoes:["acesso_etiquetas","editar_pedido"]},
   {grupo:"CADASTROS",href:"/promocoes",label:"🔥 Promoções",acoes:["acesso_tabela_varejo","acesso_tabela","admin"]},
+  {grupo:"CADASTROS",href:"/etiquetas-promocao",label:"🏷️ Etiquetas de promoção",acoes:["acesso_tabela_varejo","acesso_tabela","admin"]},
 
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/contas-pagar",label:"📒 Contas a Pagar",acoes:["acesso_contas_pagar"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/custos",label:"💼 Custos e Folha",acoes:["acesso_custos"]},
@@ -13755,6 +13756,14 @@ app.get("/api/diag/promocao",requireAdmin,(req,res)=>{ try{ const q=_promoNrm(re
   ativasDoProduto.forEach(p=>p.itens.forEach(i=>{ const m=busca.filter(b=>b.casaPor!=="nenhuma promoção ativa"); leitura.push(`Promoção ativa "${p.nome}": "${i.nome}" a R$ ${i.preco} (${i.aplica}).${m.length?` Na busca do atacado ela vale para ${m.length} entrada(s) do produto.`:" Na busca do atacado NENHUMA entrada desse produto recebe a promoção (nem por id, código ou nome)."}`); }));
   busca.filter(b=>b.casaPor==="nenhuma promoção ativa"&&ativasDoProduto.length).forEach(b=>leitura.push(`A busca do atacado mostra "${b.nome}" (id ${b.produtoId}, código ${b.codigo||"—"}) SEM promoção: não bate com nenhum produto da promoção. Confira se é o mesmo produto e, se for, adicione-o à promoção.`));
   res.json({ok:true,hoje,promocoes:promos,buscaDoAtacado:busca.slice(0,40),leitura}); }catch(e){ res.status(500).json({erro:e.message}); } });
+// ETIQUETAS DE PROMOÇÃO (separadas das etiquetas normais): produtos da promoção com o preço da promoção e o preço normal (varejo = cadastro do Bling; atacado = tabela), para a tela /etiquetas-promocao
+app.get("/api/promocoes/:id/etiquetas",_permPromo,(req,res)=>{ try{ const p=lerPromocoes().lista.find(x=>x.id===req.params.id); if(!p) return res.status(404).json({erro:"promoção não encontrada"}); const P=lerProdutosBling().porId, idx=_indicePrecosTabela();
+  const itens=(p.itens||[]).map(i=>{ const x=P[String(i.produtoId)]||{}, code=x.c||i.codigo||"", nome=x.n||i.nome||"", v=idx.porCodigo[String(code)]||idx.porNome[String(nome).toLowerCase().trim()]||null, preco=_round2(Number(i.preco)||0);
+    return {produtoId:String(i.produtoId),nome,codigo:code,categoria:(v&&v.categoria)||"",aplica:i.aplica,saborDe:i.saborDe||"",
+      varejo:(i.aplica==="varejo"||i.aplica==="ambos")?{promo:preco,normal:x.p>0?_round2(Number(x.p)):null}:null,
+      atacado:(i.aplica==="atacado"||i.aplica==="ambos")?{promo:preco,normal:v&&v.precoAtacado>0?_round2(Number(v.precoAtacado)):null}:null}; }).sort((a,b)=>a.nome.localeCompare(b.nome,"pt-BR"));
+  res.json({ok:true,promocao:{id:p.id,nome:p.nome,inicio:p.inicio,fim:p.fim,status:_statusPromocao(p,_promoHojeBR()),observacao:p.observacao||""},itens}); }catch(e){ res.status(500).json({erro:e.message}); } });
+app.get("/etiquetas-promocao",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"etiquetas-promocao.html")); });
 app.get("/api/promocoes/ativas",(req,res)=>{ try{ res.json({ok:true,hoje:_promoHojeBR(),produtos:_mapaPromoAtivo()}); }catch(e){ res.status(500).json({erro:e.message}); } });
 app.get("/api/promocoes/produtos",_permPromo,(req,res)=>{ try{ const q=_promoNrm(req.query.q||""); if(q.length<2) return res.json({ok:true,produtos:[]}); const toks=q.split(" ").filter(Boolean), P=lerProdutosBling().porId, idx=_indicePrecosTabela(), out=[];
   for(const [id,x] of Object.entries(P)){ if(!x||!x.n||x.s==="I"||x.s==="E") continue; const alvo=_promoNrm(x.n+" "+(x.c||"")); if(!toks.every(t=>alvo.includes(t))) continue; const vinc=idx.porCodigo[String(x.c||"")]||idx.porNome[String(x.n||"").toLowerCase().trim()]||null;

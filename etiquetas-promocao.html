@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>B13 — Etiquetas de promoção</title>
+<style>
+*{box-sizing:border-box;font-family:Arial,Helvetica,sans-serif;margin:0;padding:0}
+:root{--mag:#FF0082;--bg:#0f0d24;--card:#151233;--borda:#2c2660;--muted:#9a95c9}
+body{background:var(--bg);color:#fff;min-height:100vh}
+.top{background:linear-gradient(180deg,#2b2870,#262366);border-bottom:3px solid var(--mag);padding:10px 16px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.top img{height:34px}.top .t{font-weight:900;font-size:16px}.top .sp{flex:1}
+.btn{border:none;border-radius:9px;font-weight:800;cursor:pointer;font-size:13px;padding:10px 14px;color:#fff;background:var(--mag)}
+.btn-ghost{background:#1c1846;border:1px solid #3a3480}
+.wrap{padding:14px;display:grid;gap:12px;max-width:1000px;margin:0 auto}
+.card{background:var(--card);border:1px solid var(--borda);border-radius:12px;padding:13px}
+.muted{color:var(--muted);font-size:12px;line-height:1.45}
+label.lb{display:block;font-size:11px;color:var(--muted);font-weight:700;margin:8px 0 3px;text-transform:uppercase}
+select,input[type=text],input[type=number]{width:100%;background:#0d0b22;border:1px solid #3a3480;border-radius:9px;padding:10px;color:#fff;font-size:14px;outline:none}
+.chips span{padding:7px 12px;border-radius:999px;border:1px solid #3a3480;background:#1c1846;font-size:12px;font-weight:800;cursor:pointer;display:inline-block;margin:0 4px 4px 0}.chips span.on{background:var(--mag);border-color:var(--mag)}
+.lin{display:flex;gap:8px;align-items:center;padding:7px 2px;border-top:1px solid #1d1946;font-size:13px}.lin input[type=checkbox]{width:auto;flex:none}.lin .n{flex:1;min-width:0;line-height:1.35}.lin input[type=number]{width:62px;padding:6px}
+.lin.off{opacity:.45}
+.aviso{padding:9px;border-radius:9px;background:#3a2a0a;border:1px solid #8a6a1a;color:#ffe08a;font-size:12.5px}
+#folha{background:#777;padding:10px;overflow:auto}
+.pag{background:#fff;width:200mm;margin:0 auto 10px;display:grid;overflow:hidden;color:#111}
+.pag.s{grid-template-columns:repeat(2,100mm);grid-auto-rows:35mm;height:280mm;align-content:start}
+.pag.m{grid-template-columns:repeat(2,100mm);grid-auto-rows:93mm;height:280mm;align-content:start}
+.pag.g{grid-template-columns:100%;grid-auto-rows:280mm;height:280mm}
+.cel{border:0.2mm dashed #bbb;padding:1.2mm;overflow:hidden}
+.pl{width:100%;height:100%;border:0.7mm solid #FF0082;border-radius:2.4mm;display:flex;flex-direction:column;overflow:hidden;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.pl-top{background:#FF0082;color:#fff;display:flex;align-items:center;justify-content:space-between;font-weight:900;letter-spacing:.3mm;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.pl-nome{font-weight:900;text-transform:uppercase;line-height:1.08;color:#1a1740}
+.pl-precos{flex:1;display:flex;align-items:stretch;gap:1.2mm}
+.pl-p{flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;min-width:0}
+.pl-lbl{font-weight:800;color:#555;text-transform:uppercase}
+.pl-de{color:#777;text-decoration:line-through;font-weight:700}
+.pl-por{display:flex;align-items:flex-start;justify-content:center;font-weight:900;color:#d4005f;line-height:.9}
+.pl-por b{font-size:.38em;margin-top:.25em;margin-right:.1em}.pl-por i{font-style:normal;font-size:.5em;margin-top:.1em}
+.pl-rod{color:#444;display:flex;justify-content:space-between;gap:2mm;font-weight:700}
+/* pequena 100x35 */
+.s .pl-top{font-size:7.5pt;padding:.5mm 2mm}.s .pl-nome{font-size:9.5pt;padding:.8mm 2mm 0}.s .pl-nome.l{font-size:8pt}.s .pl-precos{padding:0 1.5mm}.s .pl-lbl{font-size:6pt}.s .pl-de{font-size:7pt}.s .pl-por{font-size:30pt}.s .pl-rod{font-size:6pt;padding:0 2mm .7mm}
+.s .dois .pl-por{font-size:22pt}
+/* média 100x93 */
+.m .pl-top{font-size:13pt;padding:1.4mm 4mm}.m .pl-nome{font-size:17pt;padding:2.5mm 4mm 0}.m .pl-nome.l{font-size:14pt}.m .pl-precos{padding:0 3mm}.m .pl-lbl{font-size:10pt}.m .pl-de{font-size:13pt}.m .pl-por{font-size:50pt}.m .pl-rod{font-size:9pt;padding:0 4mm 2mm}
+.m .dois .pl-por{font-size:38pt}
+/* cartaz A4 200x280 */
+.g .pl-top{font-size:34pt;padding:5mm 10mm;border-bottom:0}.g .pl-nome{font-size:50pt;padding:9mm 10mm 0}.g .pl-nome.l{font-size:40pt}.g .pl-precos{padding:0 8mm}.g .pl-lbl{font-size:26pt}.g .pl-de{font-size:36pt}.g .pl-por{font-size:150pt}.g .pl-rod{font-size:20pt;padding:0 10mm 7mm}
+.g .dois .pl-por{font-size:105pt}
+@media print{
+  @page{size:A4;margin:5mm}
+  html body{background:#fff;min-height:0;padding:0!important;margin:0!important}.noprint{display:none!important}.wrap{max-width:none;padding:0;display:block}#folha{background:#fff;padding:0}
+  .pag{margin:0;page-break-after:always;break-after:page}.pag:last-child{page-break-after:auto;break-after:auto}.cel{border-color:transparent}
+}
+</style>
+<script src="/nav.js"></script>
+</head>
+<body><script>
+  (function(){ if(!b13RequireLogin()) return; if(!b13BloquearSeSemAcesso("/etiquetas-promocao")) return;
+    document.addEventListener("DOMContentLoaded",function(){ const nav=document.createElement("div"); nav.className="noprint"; nav.innerHTML=b13RenderNav("/etiquetas-promocao"); document.body.insertBefore(nav,document.body.firstChild); }); })();
+</script>
+<div class="top noprint"><img src="/logo"><div class="t">🏷️ Etiquetas de promoção</div><div class="sp"></div><a class="btn btn-ghost" href="/promocoes" style="text-decoration:none">🔥 Promoções</a></div>
+<div class="wrap">
+  <div class="card noprint">
+    <label class="lb">Promoção</label><select id="sPromo" onchange="escolheuPromo()"></select>
+    <div class="muted" id="infoPromo" style="margin-top:6px"></div>
+    <label class="lb">Preço que vai na etiqueta</label><div class="chips" id="cTipo"></div>
+    <label class="lb">Tamanho</label><div class="chips" id="cModelo"></div>
+    <label class="lb">Observação na etiqueta (opcional)</label><input type="text" id="obs" maxlength="60" placeholder="Ex.: limite de 12 por cliente">
+  </div>
+  <div class="card noprint"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b style="flex:1">Produtos</b><button class="btn btn-ghost" onclick="marcar(true)">Marcar todos</button><button class="btn btn-ghost" onclick="marcar(false)">Desmarcar</button></div><div id="lista"><div class="muted" style="padding:14px">Escolha uma promoção.</div></div>
+    <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn" onclick="gerar()">🏷️ Gerar etiquetas</button><button class="btn btn-ghost" id="btnImp" style="display:none" onclick="window.print()">🖨️ Imprimir</button></div><div id="msg" style="margin-top:8px"></div></div>
+  <div id="folha"></div>
+</div>
+<script>
+const B = location.protocol.indexOf("http") === 0 ? "" : "https://app.b13bebidas.com.br";
+const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+function token() { try { return (b13GetSession() || {}).token || ""; } catch (e) { return ""; } }
+async function api(p) { const r = await fetch(B + p, { headers: { "X-Auth-Token": token() } }); const j = await r.json().catch(() => ({})); return { ok: r.ok, j }; }
+const dm = d => d ? d.split("-").reverse().slice(0, 2).join("/") : "";
+const dmy = d => d ? d.split("-").reverse().join("/") : "";
+let PROMOS = [], D = null, TIPO = "varejo", MODELO = "s";
+const TIPOS = [["varejo", "Varejo"], ["atacado", "Atacado"], ["ambos", "Varejo e atacado"]], MODELOS = [["s", "Pequena · 16 por folha (100×35 mm)"], ["m", "Média · 6 por folha"], ["g", "Cartaz A4 · 1 por folha"]];
+function chips() {
+  document.getElementById("cTipo").innerHTML = TIPOS.map(t => `<span class="${TIPO === t[0] ? "on" : ""}" onclick="TIPO='${t[0]}';chips();renderLista()">${t[1]}</span>`).join("");
+  document.getElementById("cModelo").innerHTML = MODELOS.map(t => `<span class="${MODELO === t[0] ? "on" : ""}" onclick="MODELO='${t[0]}';chips()">${t[1]}</span>`).join("");
+}
+async function init() {
+  chips(); const { ok, j } = await api("/api/promocoes"); if (!ok) { document.getElementById("sPromo").innerHTML = `<option>${esc(j.erro || "Não consegui carregar")}</option>`; return; }
+  const ordem = { ativa: 0, agendada: 1, encerrada: 2 }; PROMOS = (j.promocoes || []).filter(p => p.status !== "cancelada").sort((a, b) => (ordem[a.status] - ordem[b.status]) || String(b.inicio).localeCompare(String(a.inicio)));
+  const sel = document.getElementById("sPromo"); sel.innerHTML = `<option value="">— escolha —</option>` + PROMOS.map(p => `<option value="${esc(p.id)}">${esc(p.nome)} · ${p.status} · ${dm(p.inicio)} a ${dm(p.fim)} (${(p.itens || []).length} produtos)</option>`).join("");
+  const id = new URLSearchParams(location.search).get("promo") || (PROMOS.find(p => p.status === "ativa") || {}).id; if (id) { sel.value = id; escolheuPromo(); }
+}
+async function escolheuPromo() {
+  const id = document.getElementById("sPromo").value; D = null; document.getElementById("folha").innerHTML = ""; document.getElementById("btnImp").style.display = "none"; if (!id) { document.getElementById("lista").innerHTML = `<div class="muted" style="padding:14px">Escolha uma promoção.</div>`; return; }
+  document.getElementById("lista").innerHTML = `<div class="muted" style="padding:14px">Carregando…</div>`;
+  const { ok, j } = await api("/api/promocoes/" + encodeURIComponent(id) + "/etiquetas"); if (!ok) { document.getElementById("lista").innerHTML = `<div class="aviso">${esc(j.erro || "Não consegui carregar.")}</div>`; return; } D = j;
+  const p = j.promocao; document.getElementById("infoPromo").innerHTML = `${esc(p.nome)} · <b>${p.status}</b> · válida de ${dmy(p.inicio)} até ${dmy(p.fim)}` + (p.status !== "ativa" ? ` <span style="color:#ffd23f">· esta promoção ${p.status === "agendada" ? "ainda não começou" : "já terminou"}: confira as datas antes de imprimir</span>` : "");
+  const temA = j.itens.some(i => i.atacado), temV = j.itens.some(i => i.varejo); TIPO = temV && temA ? "ambos" : (temA ? "atacado" : "varejo"); chips(); renderLista();
+}
+const aplicaTipo = (i, t) => t === "ambos" ? (i.varejo || i.atacado) : i[t];
+function renderLista() {
+  if (!D) return; const guard = {}; document.querySelectorAll("#lista .lin").forEach(l => { guard[l.dataset.id] = { on: l.querySelector("input[type=checkbox]").checked, q: l.querySelector("input[type=number]").value, ok: l.dataset.ok === "1" }; });
+  document.getElementById("lista").innerHTML = D.itens.map((i, k) => { const ok = !!aplicaTipo(i, TIPO), g = guard[i.produtoId], on = g && g.ok ? g.on : ok, q = g ? g.q : 1; // produto que passa a valer no tipo escolhido volta marcado
+    const v = i.varejo ? "varejo R$ " + i.varejo.promo.toFixed(2).replace(".", ",") + (i.varejo.normal ? " (de " + i.varejo.normal.toFixed(2).replace(".", ",") + ")" : "") : "", a = i.atacado ? "atacado R$ " + i.atacado.promo.toFixed(2).replace(".", ",") + (i.atacado.normal ? " (de " + i.atacado.normal.toFixed(2).replace(".", ",") + ")" : "") : "";
+    return `<div class="lin ${ok ? "" : "off"}" data-id="${esc(i.produtoId)}" data-ok="${ok ? 1 : 0}"><input type="checkbox" ${on && ok ? "checked" : ""} ${ok ? "" : "disabled"}><div class="n"><b>${esc(i.nome)}</b>${i.saborDe ? ` <span class="muted">· sabor</span>` : ""}<div class="muted">${[v, a].filter(Boolean).join(" · ") || "sem preço"}${ok ? "" : " · não vale para " + (TIPO === "varejo" ? "o varejo" : "o atacado")}</div></div><input type="number" min="1" max="99" value="${q}" title="Quantas etiquetas"></div>`; }).join("");
+}
+function marcar(v) { document.querySelectorAll("#lista .lin input[type=checkbox]:not(:disabled)").forEach(c => c.checked = v); }
+function precoHtml(v) { const [r, c] = Number(v).toFixed(2).split("."); return `<span class="pl-por"><b>R$</b>${Number(r).toLocaleString("pt-BR")}<i>,${c}</i></span>`; }
+function celulaPreco(lbl, o, mostrarLbl) { const de = o.normal && o.normal > o.promo + 0.004 ? `<span class="pl-de">de R$ ${o.normal.toFixed(2).replace(".", ",")}</span>` : ""; return `<div class="pl-p">${mostrarLbl ? `<span class="pl-lbl">${lbl}</span>` : ""}${de}${precoHtml(o.promo)}</div>`; }
+function etiqueta(i, tipo) {
+  const v = (tipo !== "atacado") ? i.varejo : null, a = (tipo !== "varejo") ? i.atacado : null, dois = !!(v && a), p = D.promocao, obs = document.getElementById("obs").value.trim();
+  const nome = String(i.nome || ""), val = p.fim ? "Válido até " + dmy(p.fim) : "";
+  return `<div class="pl"><div class="pl-top"><span>🔥 PROMOÇÃO</span><span>${dois ? "" : (v ? "VAREJO" : "ATACADO")}</span></div><div class="pl-nome ${nome.length > 34 ? "l" : ""}">${esc(nome)}</div>
+    <div class="pl-precos ${dois ? "dois" : ""}">${v ? celulaPreco("Varejo", v, dois) : ""}${a ? celulaPreco("Atacado", a, dois) : ""}</div><div class="pl-rod"><span>${esc(val)}</span><span>${esc(obs)}</span></div></div>`;
+}
+function gerar() {
+  if (!D) { alert("Escolha uma promoção."); return; } const cel = [];
+  document.querySelectorAll("#lista .lin").forEach(l => { const c = l.querySelector("input[type=checkbox]"); if (!c.checked) return; const i = D.itens.find(x => x.produtoId === l.dataset.id), n = Math.max(1, Math.min(99, Number(l.querySelector("input[type=number]").value) || 1)); if (!i || !aplicaTipo(i, TIPO)) return; const h = etiqueta(i, TIPO); for (let k = 0; k < n; k++) cel.push(h); });
+  if (!cel.length) { document.getElementById("msg").innerHTML = `<div class="aviso">Marque pelo menos um produto.</div>`; return; }
+  const porPag = MODELO === "s" ? 16 : MODELO === "m" ? 6 : 1, pags = []; for (let k = 0; k < cel.length; k += porPag) pags.push(`<div class="pag ${MODELO}">${cel.slice(k, k + porPag).map(h => `<div class="cel">${h}</div>`).join("")}</div>`);
+  document.getElementById("folha").innerHTML = pags.join(""); document.getElementById("btnImp").style.display = "inline-block";
+  document.getElementById("msg").innerHTML = `<div class="muted">${cel.length} etiqueta(s) em ${pags.length} folha(s) A4. Na impressão use A4, escala 100% e sem margens extras.</div>`; document.getElementById("folha").scrollIntoView({ behavior: "smooth" });
+}
+init();
+</script>
+</body>
+</html>
