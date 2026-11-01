@@ -13634,7 +13634,7 @@ app.get("/api/custos-entradas",_permCustosEnt,(req,res)=>{ try{ const dias=Math.
   res.json({ok:true,dias,resumo,linhas:L.slice(0,400).map(r=>({...r,dia:_diaBRk(r.em),custoAtual:ctxDe(r.produtoId).custoAtual}))}); }catch(e){ res.status(500).json({erro:e.message}); } });
 // COMO O CUSTO CADASTRADO SE COMPORTA DEPOIS DAS ENTRADAS: compara, produto a produto, o custo que está no cadastro hoje com o ÚLTIMO custo lançado e com a MÉDIA das últimas entradas (ponderada pela quantidade).
 // O sistema só manda o custo de cada entrada ao Bling; é o Bling quem decide se guarda o último custo ou um custo médio. Isto mostra o que ele fez nos seus produtos.
-app.get("/api/custos-entradas/regra",_permCustosEnt,(req,res)=>{ try{ const P=lerProdutosBling().porId, by=_linhasCustos().porProduto, manuais=lerJSON(CUSTOS_MANUAIS_FILE,{}), igual=(a,b)=>Math.abs(a-b)<=Math.max(0.01,Math.abs(b)*0.005);
+const _regraCustoH=(req,res)=>{ try{ const P=lerProdutosBling().porId, by=_linhasCustos().porProduto, manuais=lerJSON(CUSTOS_MANUAIS_FILE,{}), igual=(a,b)=>Math.abs(a-b)<=Math.max(0.01,Math.abs(b)*0.005);
   let n=0,ult=0,med=0,amb=0,outro=0,manual=0; const exemplos=[];
   Object.entries(by).forEach(([id,L])=>{ const E=L.filter(r=>/^Entrada/.test(r.origem)&&r.quantidade>0); if(E.length<2) return; const x=P[id], atual=x&&Number(x.pc)>0?Number(x.pc):null; if(atual==null) return; if(manuais[id]){ manual++; return; }
     const recentes=E.slice(0,10), q=recentes.reduce((a,r)=>a+r.quantidade,0), media=_round2(recentes.reduce((a,r)=>a+r.custo*r.quantidade,0)/q), ultimo=E[0].custo, iu=igual(atual,ultimo), im=igual(atual,media); n++;
@@ -13646,7 +13646,9 @@ app.get("/api/custos-entradas/regra",_permCustosEnt,(req,res)=>{ try{ const P=le
   else if(med/decididos>=0.7) leitura=`O cadastro está com a MÉDIA das entradas em ${med} de ${decididos} produtos em que o último custo e a média diferem. Ou seja, o Bling parece estar calculando custo médio.`;
   else leitura=`Sem regra clara: ${ult} produtos com o último custo, ${med} com a média das entradas e ${outro} com outro valor (pode ser custo médio ponderado pelo estoque que havia, ou ajuste feito à mão no Bling).`;
   res.json({ok:true,leitura,produtosAnalisados:n,comUltimoCusto:ult,comMediaDasEntradas:med,ultimoEMediaIguais:amb,comOutroValor:outro,comAjusteManualNoSistema:manual,exemplosDeOutroValor:exemplos,
-    comoOSistemaUsaOCusto:"Cada produto tem UM custo (o do cadastro do Bling). O relatório de margem por período e o alerta de venda abaixo do custo usam esse custo atual para todas as vendas, sem separar por lote."}); }catch(e){ res.status(500).json({erro:e.message}); } });
+    comoOSistemaUsaOCusto:"Cada produto tem UM custo (o do cadastro do Bling). O relatório de margem por período e o alerta de venda abaixo do custo usam esse custo atual para todas as vendas, sem separar por lote."}); }catch(e){ res.status(500).json({erro:e.message}); } };
+app.get("/api/custos-entradas/regra",_permCustosEnt,_regraCustoH);
+app.get("/api/diag/regra-custo",_permCustosEnt,_regraCustoH); // endereço aceito pela página de apoio /diag
 app.get("/api/custos-entradas/produto/:id",_permCustosEnt,(req,res)=>{ try{ const id=String(req.params.id), ctx=_contextoPrecoProduto(id), L=((_linhasCustos().porProduto[id])||[]).slice(0,Math.min(60,Math.max(1,Number(req.query.limite)||20))).map(r=>({..._marcaAcima({...r},ctx),dia:_diaBRk(r.em)}));
   if(!ctx.nome&&!L.length) return res.status(404).json({erro:"produto não encontrado"}); const vistos=lerJSON(CUSTOS_MANUAIS_FILE,{})[id]||null;
   res.json({ok:true,produto:{id,...ctx},custoManualVigente:vistos?{custo:vistos.custo,em:vistos.em,por:vistos.por,origem:vistos.origem}:null,historico:L,
