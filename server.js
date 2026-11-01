@@ -1652,11 +1652,13 @@ const lerJSON=(f,def={})=>{ try{return JSON.parse(fs.readFileSync(f,"utf8"));}ca
 // antigo continua inteiro, em vez de ficar cortado pela metade (e depois ser lido como vazio).
 // gravação atômica. Se falhar, apaga o temporário (antes ele ficava ocupando espaço). Se a falha for DISCO CHEIO
 // (ENOSPC), faz a faxina de espaço na hora e tenta de novo, para o caixa não travar.
+var _salvarGancho=null;
 const salvarJSON=(f,d)=>{
   const tmp=`${f}.tmp-${process.pid}`; const txt=JSON.stringify(d);
   const gravar=()=>{ try{ fs.writeFileSync(tmp,txt); fs.renameSync(tmp,f); }catch(e){ try{ fs.unlinkSync(tmp); }catch(_){} throw e; } };
-  try{ gravar(); }
-  catch(e){ if(e&&e.code==="ENOSPC"&&typeof faxinaDisco==="function"){ faxinaDisco("disco cheio ao gravar "+path.basename(f),true); gravar(); } else throw e; }
+    try{ gravar(); }
+ catch(e){ if(e&&e.code==="ENOSPC"&&typeof faxinaDisco==="function"){ faxinaDisco("disco cheio ao gravar "+path.basename(f),true); gravar(); } else throw e; }
+ if(_salvarGancho&&f===_salvarGancho.arquivo){ try{ _salvarGancho.fn(d); }catch(e){} }
 };
 // Hash de senha forte: scrypt com sal único por usuário (formato salvo: "salt:hash").
 // Antigo (SHA-256 com sal fixo compartilhado) ainda é reconhecido pra não invalidar
@@ -11468,7 +11470,7 @@ app.post("/api/margem-bruta/custo/:id",requireAcesso("acesso_margem_bruta"),asyn
     res.json({ok:true,...(await _gravarCustoProduto(String(req.params.id),c,req.sessao?.nome||"","margem bruta"))}); }
   catch(e){ res.status(e.status||500).json({erro:e.message}); }
 });
-app.get("/api/margem-bruta",requireAcesso("acesso_margem_bruta"),(req,res)=>{
+app.get("/api/margem-bruta",requireAcesso("acesso_margem_bruta"),(req,res)=>{ let _nEpoca=0,_nAtual=0;
   try{ const q=req.query, ag=["pedido","dia","semana","mes","produto"].includes(q.agrupar)?q.agrupar:"mes", P=lerProdutosBling().porId, PROD={};
     // BUSCA: cliente, vendedora, nº do pedido OU produto (nome ou código). Várias palavras: todas precisam aparecer. Se a busca é de produto, só os itens daquele produto entram nas contas.
     const r=_filtrarPedidos({...q,busca:""}), G={}, CLI={}, T={fatCusto:0,custo:0,fatSemCusto:0,pedidos:0,itensSemCusto:{}}, SI={qtd:0,total:0,hoje:0,lista:[]}; T.taxa=0; T.taxaCusto=0; T.varejoPedidos=0; T.txSemPagamento=0; T.txSemTaxa=0; const cfgTX=lerTaxasCartao(), DETX=lerDetPedidos();
@@ -11484,10 +11486,11 @@ app.get("/api/margem-bruta",requireAcesso("acesso_margem_bruta"),(req,res)=>{
       const varejoTx=_ehVarejoTx(p), feeP=varejoTx?_taxasDoPedidoTx(p.id,cfgTX,DETX):null; if(varejoTx){ T.varejoPedidos++; if(feeP.semPagamento) T.txSemPagamento++; else if(feeP.semTaxa) T.txSemTaxa++; }
       const nmCli=p.cliente||((p.clienteId&&lerClientesBase().porId[String(p.clienteId)]||{}).nome)||"", cliK=nmCli?"N:"+nrmB(nmCli).replace(/\s+/g," ").trim():(p.clienteId?"I:"+p.clienteId:"N:"), cli=(CLI[cliK]||={clienteId:p.clienteId||null,nome:nmCli,prod:{}}); // mesmo nome = mesmo cliente (os pedidos podem trazer contatos repetidos no Bling)
       const k=chave(p), g=(G[k]||={chave:k,rotulo:ag==="pedido"?`#${p.numero||p.id} · ${p.cliente||""}`:k,dia:p.dia,pedidoId:ag==="pedido"?p.id:null,fatCusto:0,custo:0,fatSemCusto:0,pedidos:0,taxa:0,taxaCusto:0}); g.pedidos++;
-      it.forEach(i=>{ const pr=i.produtoId?P[String(i.produtoId)]:null, v=(Number(i.valor)||0)*(Number(i.quantidade)||0), c=pr&&pr.pc>0?pr.pc*(Number(i.quantidade)||0):null, tx=feeP&&!feeP.semPagamento&&somaOrd>0?feeP.total*v/somaOrd:0;
-        { const cpk=String(i.produtoId||i.nome||"?"), cp=(cli.prod[cpk]||={fat:0,custo:0,fatCusto:0,ped:new Set()}); cp.fat+=v; cp.ped.add(p.id); if(c!=null){ cp.custo+=c; cp.fatCusto+=v; } }
+      it.forEach(i=>{ const pr=i.produtoId?P[String(i.produtoId)]:null, v=(Number(i.valor)||0)*(Number(i.quantidade)||0), cd=i.produtoId?custoNaData(i.produtoId,p.data):null, c=cd&&cd.custo>0?cd.custo*(Number(i.quantidade)||0):(pr&&pr.pc>0?pr.pc*(Number(i.quantidade)||0):null), _ce=(c!=null)?(cd&&cd.custo>0&&cd.epoca?1:0):-1, tx=feeP&&!feeP.semPagamento&&somaOrd>0?feeP.total*v/somaOrd:0;
+        if(_ce===1) _nEpoca++; else if(_ce===0) _nAtual++;
+ { const cpk=String(i.produtoId||i.nome||"?"), cp=(cli.prod[cpk]||={fat:0,custo:0,fatCusto:0,ped:new Set()}); cp.fat+=v; cp.ped.add(p.id); if(c!=null){ cp.custo+=c; cp.fatCusto+=v; } }
         if(ag==="produto"){ const pk=String(i.produtoId||i.nome||"?"), x=(PROD[pk]||={produtoId:i.produtoId||null,nome:(pr&&pr.n)||i.nome||pk,qtd:0,fat:0,custo:0,custoUn:pr&&pr.pc>0?pr.pc:null,precoVenda:pr?pr.p:null,pedidos:new Set(),taxa:0,taxaCusto:0});
-          x.qtd+=Number(i.quantidade)||0; x.fat+=v; if(c!=null){ x.custo+=c; x.taxaCusto+=tx; } x.taxa+=tx; x.pedidos.add(p.id); }
+          x.qtd+=Number(i.quantidade)||0; x.fat+=v; if(c!=null){ x.custo+=c; x.taxaCusto+=tx; x.qCusto=(x.qCusto||0)+(Number(i.quantidade)||0); } x.taxa+=tx; x.pedidos.add(p.id); }
         g.taxa+=tx; T.taxa+=tx; if(c!=null){ g.taxaCusto+=tx; T.taxaCusto+=tx; g.fatCusto+=v; g.custo+=c; T.fatCusto+=v; T.custo+=c; } else { g.fatSemCusto+=v; T.fatSemCusto+=v; const nk=i.nome||String(i.produtoId||"?"); T.itensSemCusto[nk]=(T.itensSemCusto[nk]||0)+v; } }); });
     // CLIENTES do filtro: só os itens que entraram nas contas (respeita busca e, por produto, "só com/sem custo" e "margem abaixo de")
     const nomeCli=c=>c.nome||((c.clienteId&&lerClientesBase().porId[String(c.clienteId)]||{}).nome)||"(sem cliente informado)";
@@ -11496,11 +11499,11 @@ app.get("/api/margem-bruta",requireAcesso("acesso_margem_bruta"),(req,res)=>{
     const fin=x=>({...x,fatCusto:_round2(x.fatCusto),custo:_round2(x.custo),fatSemCusto:_round2(x.fatSemCusto),taxa:_round2(x.taxa||0),lucroLiq:_round2(x.fatCusto-x.custo-(x.taxaCusto||0)),margemLiq:x.fatCusto>0?+((x.fatCusto-x.custo-(x.taxaCusto||0))/x.fatCusto*100).toFixed(1):null,lucro:_round2(x.fatCusto-x.custo),margem:x.fatCusto>0?+((x.fatCusto-x.custo)/x.fatCusto*100).toFixed(1):null,markup:x.custo>0?+((x.fatCusto-x.custo)/x.custo*100).toFixed(1):null});
     // período que toca os últimos 3 dias: confere os pedidos do Bling (no máximo a cada 4 min), sem esperar aviso nem a madrugada
     const limRec=new Date(Date.now()-3*3600e3-3*_DIA).toISOString().slice(0,10); if(r.fim>=limRec&&!_recentes.rodando&&Date.now()-_recentes.em>4*60000) atualizarRecentesBling(3);
-    const EXTRA={semItens:{qtd:SI.qtd,total:_round2(SI.total),hoje:SI.hoje,lista:SI.lista},atualizadoEm:Date.now(),indiceEm:_idxPed.em,
+    const _hv=_carregarCustosVigentes(); const EXTRA={custoHistorico:{desde:_hv.desde?_diaBRk(_hv.desde):null,itensComCustoDaEpoca:_nEpoca,itensSemHistoricoAnterior:_nAtual},semItens:{qtd:SI.qtd,total:_round2(SI.total),hoje:SI.hoje,lista:SI.lista},atualizadoEm:Date.now(),indiceEm:_idxPed.em,
       bling:{atualizando:!!(_recentes.rodando||_detFilaRodando||(_detPendentes&&_detPendentes.size)),recentesEm:_recentes.em||0,lidos:_recentes.lidos,novos:_recentes.novos,erro:_recentes.erro}};
     const linhas=Object.values(G).map(fin).sort((a,b)=>ag==="pedido"?String(b.dia).localeCompare(String(a.dia)):String(a.chave).localeCompare(String(b.chave)));
     if(ag==="produto"){ // lista de produtos com parâmetros de análise
-      let L=Object.values(PROD).map(x=>{ const tem=x.custoUn!=null, lucro=tem?_round2(x.fat-x.custo):null; return {produtoId:x.produtoId,nome:x.nome,qtd:+x.qtd.toFixed(2),fat:_round2(x.fat),custo:tem?_round2(x.custo):null,custoUn:x.custoUn,precoVenda:x.precoVenda,
+      let L=Object.values(PROD).map(x=>{ const tem=x.custoUn!=null, lucro=tem?_round2(x.fat-x.custo):null; return {produtoId:x.produtoId,nome:x.nome,qtd:+x.qtd.toFixed(2),fat:_round2(x.fat),custo:tem?_round2(x.custo):null,custoUn:(x.qCusto>0?_round2(x.custo/x.qCusto):x.custoUn),custoAtual:x.custoUn,precoVenda:x.precoVenda,
         precoMedio:x.qtd?_round2(x.fat/x.qtd):null,lucro,margem:tem&&x.fat>0?+((x.fat-x.custo)/x.fat*100).toFixed(1):null,markup:tem&&x.custo>0?+((x.fat-x.custo)/x.custo*100).toFixed(1):null,markupUn:tem&&x.qtd>0?_round2((x.fat-x.custo)/x.qtd):null,taxa:_round2(x.taxa||0),margemLiq:tem&&x.fat>0?+(((x.fat-x.custo-(x.taxaCusto||0))/x.fat)*100).toFixed(1):null,pedidos:x.pedidos.size,_ped:x.pedidos}; });
       const mx=q.margemMax!=null&&q.margemMax!==""?Number(String(q.margemMax).replace(",",".")):null;
       if(q.so==="sem_custo") L=L.filter(x=>x.custoUn==null); else if(q.so==="com_custo") L=L.filter(x=>x.custoUn!=null);
@@ -13610,6 +13613,25 @@ app.post("/api/custos/ficha/:fid",requireAcesso("acesso_custos"),(req,res)=>{
     salvarJSON(CUSTOS_FICHAS_FILE,fichas); addLog("funcionario-"+f.id,"ficha_de_custo",req.sessao?.funcionarioId||"",quem,{funcionario:f.nome,custoMensal:_round2(valores.salario+valores.encargos+valores.beneficios+valores.provisao)});
     res.json({ok:true,valores,custoMensal:_round2(valores.salario+valores.encargos+valores.beneficios+valores.provisao),ficha:fichas[f.id]});
   }catch(e){ res.status(500).json({erro:e.message}); } });
+// ===================== CUSTO NA DATA DA VENDA =====================
+// Cada vez que o custo de um produto muda no cadastro (sincronização com o Bling, aviso do Bling, ajuste manual ou entrada de estoque), a mudança é registrada com a data.
+// O relatório de margem usa, para cada venda, o custo que valia NO DIA dela; o que for anterior ao início deste histórico continua com o custo mais antigo conhecido.
+const CUSTOS_VIGENTES_FILE=`${DATA_DIR}/custos_vigentes.jsonl`;
+var _pcVisto=null, _cvCache={mt:0,porProduto:{},desde:null};
+function _registrarPcMudancas(d){ try{ const P=(d&&d.porId)||{}, agora=Date.now(), linhas=[];
+  if(!_pcVisto){ _pcVisto={}; try{ fs.readFileSync(CUSTOS_VIGENTES_FILE,"utf8").split("\n").forEach(l=>{ if(!l) return; try{ const o=JSON.parse(l); _pcVisto[o.id]=Number(o.custo)||0; }catch(e){} }); }catch(e){} }
+  Object.entries(P).forEach(([id,x])=>{ const novo=Number(x&&x.pc)||0, ant=_pcVisto[id]; if(!(novo>0)) return; if(ant===undefined){ _pcVisto[id]=novo; linhas.push({em:agora,id,antes:null,custo:_round2(novo),origem:"início do histórico"}); }
+    else if(Math.abs(novo-ant)>0.004){ _pcVisto[id]=novo; linhas.push({em:agora,id,antes:ant>0?_round2(ant):null,custo:_round2(novo),origem:"mudança no cadastro"}); } });
+  if(linhas.length) fs.appendFileSync(CUSTOS_VIGENTES_FILE,linhas.map(l=>JSON.stringify(l)).join("\n")+"\n"); }catch(e){ console.error("[custos vigentes]",e.message); } }
+function _carregarCustosVigentes(){ let mt=0; try{ mt=fs.statSync(CUSTOS_VIGENTES_FILE).mtimeMs; }catch(e){ return _cvCache; } if(mt===_cvCache.mt) return _cvCache; const por={}; let desde=null;
+  try{ fs.readFileSync(CUSTOS_VIGENTES_FILE,"utf8").split("\n").forEach(l=>{ if(!l) return; try{ const o=JSON.parse(l); (por[o.id]||(por[o.id]=[])).push({dia:_diaBRk(o.em),custo:Number(o.custo)||0,em:o.em,origem:o.origem}); if(desde===null||o.em<desde) desde=o.em; }catch(e){} }); }catch(e){}
+  Object.values(por).forEach(a=>a.sort((x,y)=>x.em-y.em)); _cvCache={mt,porProduto:por,desde}; return _cvCache; }
+// custo do produto NO DIA da venda (dia = "AAAA-MM-DD"); epoca=true quando há registro do histórico igual ou anterior àquele dia
+function custoNaData(produtoId,dia){ const a=_carregarCustosVigentes().porProduto[String(produtoId)]; if(!a||!a.length) return null; let r=null; for(const x of a){ if(x.dia<=dia) r=x; else break; } return r?{custo:r.custo,epoca:true}:{custo:a[0].custo,epoca:false}; }
+setTimeout(()=>{ try{ _salvarGancho={arquivo:PRODUTOS_BLING_FILE,fn:_registrarPcMudancas}; _registrarPcMudancas(lerProdutosBling()); }catch(e){ console.error("[custos vigentes] início:",e.message); } },8000);
+app.get("/api/diag/historico-custo",requireAcesso("acesso_custos"),(req,res)=>{ try{ const id=String(req.query.id||"").replace(/\D/g,""); const C=_carregarCustosVigentes(), x=lerProdutosBling().porId[id];
+  if(!id) return res.json({ok:true,historicoDesde:C.desde?_diaBRk(C.desde):null,produtosComHistorico:Object.keys(C.porProduto).length,comMaisDeUmaMudanca:Object.values(C.porProduto).filter(a=>a.length>1).length,mudancasRecentes:Object.entries(C.porProduto).flatMap(([pid,a])=>a.filter(r=>r.origem!=="início do histórico").map(r=>({produtoId:pid,nome:(lerProdutosBling().porId[pid]||{}).n||"",dia:r.dia,custo:r.custo}))).sort((a,b)=>b.dia.localeCompare(a.dia)).slice(0,40)});
+  res.json({ok:true,produto:{id,nome:x?x.n:"",custoAtual:x?x.pc:null},historicoDesde:C.desde?_diaBRk(C.desde):null,historico:(C.porProduto[id]||[]).map(r=>({dia:r.dia,custo:r.custo,origem:r.origem})).reverse()}); }catch(e){ res.status(500).json({erro:e.message}); } });
 // ===================== HISTÓRICO DE CUSTOS POR ENTRADA =====================
 // Cada entrada de estoque (nota ou sem nota) grava o custo aplicado por unidade de cada item (custoRealUn, que já inclui rateio de frete e bonificação). Aqui isso vira o histórico de custo por produto,
 // junto com os ajustes manuais de custo (margem bruta, ficha do produto), que passam a ser registrados em custos_historico.jsonl.
