@@ -1068,7 +1068,7 @@ async function abrirPedidoParaEdicao(id) {
     MODO_EDICAO_PAGAMENTO = true;
     RECEBIMENTO = j.recebimento || null;
     NFCE_ABERTA = j.nfce || null; // NFC-e que está valendo para o pedido (alterar o pedido não muda a nota)
-    ITENS_ORIGINAIS = (j.itens || []).map(i => ({ produtoId: i.produtoId, quantidade: Number(i.quantidade) }));
+    ITENS_ORIGINAIS = (j.itens || []).map(i => ({ produtoId: i.produtoId, nome: i.nome || "", quantidade: Number(i.quantidade), valor: Number(i.valor) || 0 }));
     ESTORNO_EDICAO = null;
     window._obsVenda = j.obsImpressa || ""; // observação impressa na nota (guardada no sistema, não no Bling)
     window._filtroPed = "";
@@ -1084,6 +1084,11 @@ function itensMudaramNaReabertura() {
   const mapa = l => { const m = {}; (l || []).forEach(i => { m[String(i.produtoId)] = (m[String(i.produtoId)] || 0) + Number(i.quantidade || 0); }); return m; };
   const A = mapa(ITENS_ORIGINAIS), Bm = mapa(CARRINHO);
   return Object.keys({ ...A, ...Bm }).some(k => Math.abs((A[k] || 0) - (Bm[k] || 0)) > 0.0005);
+}
+function retiradosAgora() {
+  const ag = l => { const M = {}; (l || []).forEach(i => { const k = String(i.produtoId), q = Number(i.quantidade) || 0, v = Number(i.valor) || 0, o = M[k] || (M[k] = { produtoId: k, nome: "", q: 0, t: 0 }); o.q += q; o.t += q * v; o.nome = o.nome || i.nome || ""; }); return M; };
+  const A = ag(ITENS_ORIGINAIS), D = ag(CARRINHO);
+  return Object.keys(A).map(k => { const a = A[k], qd = D[k] ? D[k].q : 0; if (a.q <= qd + 0.0001) return null; const un = a.q > 0 ? a.t / a.q : 0, qr = +(a.q - qd).toFixed(4); return { produtoId: k, nome: a.nome || (D[k] && D[k].nome) || "produto " + k, quantidade: qr, valor: +(qr * un).toFixed(2) }; }).filter(Boolean);
 }
 function devidoNaReabertura() {
   if (!MODO_EDICAO_PAGAMENTO || !RECEBIMENTO || !itensMudaramNaReabertura()) return 0;
@@ -1114,6 +1119,7 @@ function renderDevolucao() {
     ${window._devLinhas.length > 1 ? `<button class="btn btn-ghost btn-sm" onclick="devDel(${i})">✕</button>` : ""}</div>`).join("");
   document.getElementById("modais").innerHTML = `<div class="modalBg"><div class="modal"><h3>↩️ Devolver ao cliente</h3>
     <div class="muted" style="font-size:12.5px;line-height:1.5;margin-bottom:8px">Pedido #${esc(PEDIDO_ATUAL.numero)} já pago: <b>${rec.linhas.map(p => esc(p.formaNome) + " " + brl(p.valor)).join(" · ")}</b>${rec.estornado > 0.009 ? " · já devolvido " + brl(rec.estornado) : ""}.<br>Recebido líquido <b>${brl(rec.liquido)}</b> · novo total <b>${brl(total)}</b> · produtos retirados somam <b style="color:#ffd23f">${brl(devido)}</b> a devolver.</div>
+    ${(() => { const r = retiradosAgora(), tot = r.reduce((a, x) => a + x.valor, 0); return r.length ? `<div style="margin:8px 0;padding:8px;background:#1a1440;border:1px solid #3a3480;border-radius:8px;font-size:12.5px;line-height:1.5"><b>Produtos retirados</b>${r.map(x => `<div style="display:flex;justify-content:space-between;gap:8px"><span>${x.quantidade}× ${esc(x.nome)}</span><b>${brl(x.valor)}</b></div>`).join("")}<div style="display:flex;justify-content:space-between;gap:8px;margin-top:4px;border-top:1px dashed #3a3480;padding-top:4px"><span>Recebido ${brl(rec.liquido)} · novo total ${brl(total)}</span><b>a devolver ${brl(devido)}</b></div>${Math.abs(tot - devido) > 0.05 ? `<div class="muted" style="font-size:11.5px">O valor a devolver difere do total retirado (${brl(tot)}) porque o pedido também teve acréscimo ou mudança de preço.</div>` : ""}</div>` : ""; })()}
     <div class="muted" style="font-size:12px;margin-bottom:4px">De qual meio sai a devolução</div>${linhas}
     <button class="btn btn-ghost btn-sm" onclick="devAdd()">＋ Dividir em outro meio</button><div id="devResumo" style="margin:8px 0;font-size:13px"></div>
     <label style="display:flex;gap:6px;align-items:center;font-size:12.5px"><input type="checkbox" id="devDepois" ${depoisMarcado ? "checked" : ""} onchange="devResumo()"> Devolver depois (fica pendente e a gerência recebe um aviso)</label>
@@ -1206,6 +1212,14 @@ function salvarEdicaoPagamento() {
       const estMsg = est ? est.estornadoERelancado ? '<div class="muted" style="font-size:12px;margin-top:6px;color:#8fffc0">📦 ' + esc(est.msg) + '</div>' : '<div style="margin-top:8px;padding:8px;background:#3a0010;border:1px solid #b3341f;border-radius:8px;font-size:12px;color:#ff8f7a">' + esc(est.msg) + '</div>' : '';
       const rep = resp.estoqueReposto || [];
       const repMsg = rep.length ? `<div class="muted" style="text-align:left;margin-top:6px;font-size:12px">📦 Estoque reposto pra concluir: ${rep.map(r => esc(r.nome || "produto " + r.produtoId) + " (+" + r.faltava + ")").join(", ")}</div>` : "";
+            ULTIMA_VENDA = {
+        numero: resp.numero || (PEDIDO_ATUAL && PEDIDO_ATUAL.numero) || "", pedidoId: PEDIDO_ATUAL && PEDIDO_ATUAL.id, total: totalPedido(), desconto: 0, outrasDespesas: +(OUTRAS_DESPESAS + taxaCartao()).toFixed(2), frete: FRETE,
+        itens: CARRINHO.map(i => ({ produtoId: i.produtoId, nome: i.nome, quantidade: i.quantidade, preco: i.valor })),
+        pagamentos: modoEst && RECEBIMENTO ? (RECEBIMENTO.linhas || []).map(p => ({ formaNome: p.formaNome, valor: p.valor })) : (PAGAMENTOS || []).slice(),
+        estornos: (resp.estorno && resp.estorno.registrados) || [], retirados: resp.retirados || [], estornoPendente: (resp.estorno && resp.estorno.pendente) || 0,
+        cliente: { nome: CLIENTE_NOME || "Consumidor Final" }, dataHora: Date.now(), nfce: null, obsImpressa: window._obsVenda || "", operador: (typeof S !== "undefined" && S && S.nome) || "",
+        montadoPor: PEDIDO_ATUAL && PEDIDO_ATUAL.vendedorNome && PEDIDO_ATUAL.vendedorNome !== "Sem vendedor" ? PEDIDO_ATUAL.vendedorNome : ""
+      };
       document.getElementById("modais").innerHTML = `
           <div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal" style="text-align:center">
             <div style="font-size:44px">✏️</div><h3>Pedido alterado!</h3>
@@ -1216,7 +1230,8 @@ function salvarEdicaoPagamento() {
             ${resp.nfceDesatualizada ? `<div style="margin-top:10px;padding:8px;background:#3a2a0a;border:1px solid #8a6a1a;border-radius:8px;font-size:12px;text-align:left;color:#ffe08a">🧾 <b>A NFC-e${resp.nfceDesatualizada.numero ? " nº " + esc(resp.nfceDesatualizada.numero) : ""} ficou desatualizada</b> (${resp.nfceDesatualizada.valorNota ? "nota " + brl(resp.nfceDesatualizada.valorNota) : "valor antigo"} × pedido agora ${brl(resp.nfceDesatualizada.novoTotal)}). O financeiro foi avisado: cancelar a nota no Bling e emitir de novo na Gestão de NFC-e.</div>` : ""}
             ${iaMsg}${estMsg}${repMsg}${(() => { const eo = resp.estorno; if (!eo) return ""; const rotE = r => r.forma === "pix" ? "por Pix (" + esc(r.banco) + ")" : r.forma === "credito" ? "como crédito para o cliente" : "em dinheiro da gaveta"; return `<div style="margin-top:10px;padding:8px;background:#2a1d3a;border:1px solid #7a4cc2;border-radius:8px;font-size:12px;text-align:left;color:#e8d7ff">↩️ <b>Devolvido ao cliente</b> (já tinha pago ${brl(eo.recebidoLiquido)}, novo total ${brl(eo.novoTotal)})${(eo.registrados || []).map(r => "<br>" + brl(r.valor) + " " + rotE(r)).join("")}${eo.pendente ? `<br>⏳ <b>Falta devolver ${brl(eo.pendente)}</b> (a gerência foi avisada)` : ""}${(eo.falhas || []).length ? "<br>⚠️ " + esc(eo.falhas.join("; ")) : ""}</div>`; })()}
             ${resp.incluidoNoCaixa ? `<div style="margin-top:10px;padding:8px;background:#2a2410;border:1px solid #6b5f1f;border-radius:8px;color:#ffd23f;font-size:12px;text-align:left">⚠️ Este pedido não estava em nenhum caixa do sistema. Foi <b>incluído no caixa atual</b> (${esc(resp.incluidoNoCaixa.operador || "você")}).</div>` : ""}
-            <button class="btn" style="width:100%;margin-top:14px" onclick="fecharModais();novaVenda();carregarPedidos();carregarSessao().then(render)">OK</button>
+                        <button class="btn btn-ghost" style="width:100%;margin-top:14px" onclick="imprimirComprovante(ULTIMA_VENDA)">🖨️ Imprimir comprovante atualizado</button>
+            <button class="btn" style="width:100%;margin-top:8px" onclick="fecharModais();novaVenda();carregarPedidos();carregarSessao().then(render)">OK</button>
           </div></div>`;
     } catch (e) {
       FINALIZANDO = false;
@@ -1709,7 +1724,10 @@ function movimentoParaComprovante(m) {
       quantidade: i.quantidade,
       preco: i.valor
     })),
-    pagamentos: m.pagamentos || [],
+        pagamentos: m.pagamentos || [],
+    estornos: (m.estornos || []).map(e => ({ valor: e.valor, forma: e.forma, banco: e.banco })),
+    retirados: (m.retirados || []).map(r => ({ nome: r.nome, quantidade: r.quantidade, valor: r.valor })),
+    estornoPendente: Number(m.estornoPendente || 0),
     cliente: {
       nome: m.clienteNome || "Consumidor Final"
     },

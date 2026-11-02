@@ -8,7 +8,7 @@
  *   ehEntrega, endereco
  *   itens [{nome, quantidade, preco}]
  *   frete, outrasDespesas, desconto, total
- *   pagamentos [{formaNome, valor}], troco, pago
+ *   pagamentos [{formaNome, valor}], troco, pago, estornos [{valor, forma, banco}], retirados [{nome, quantidade, valor}], estornoPendente (valor a devolver depois)
  *   obsImpressa  (texto da "Observação impressa na nota"; a observação do Bling nunca entra aqui)
  */
 (function () {
@@ -77,6 +77,9 @@
     const obsTxt = v.obsImpressa && String(v.obsImpressa).trim() ? String(v.obsImpressa).trim() : "";
     const linhasObs = obsTxt ? obsTxt.split(/\n+/).flatMap(par => quebrar(_mc, par.trim() || " ", W - padd * 2, 60)) : [];
     const pagamentos = v.pagamentos || [];
+    // pedido reaberto com item retirado: o que foi retirado, o que voltou para o cliente e o resumo (recebido, devolvido, total)
+    const estornosC = (v.estornos || []).filter(e => Number(e.valor) > 0.009), retiradosC = (v.retirados || []).filter(r => Number(r.valor) > 0.009), pendenteC = Number(v.estornoPendente) > 0.049 ? Number(v.estornoPendente) : 0;
+    const temDevolucao = estornosC.length > 0 || retiradosC.length > 0 || pendenteC > 0;
     const outras = Number(v.outrasDespesas || 0), frete = Number(v.frete || 0), desconto = Number(v.desconto || 0);
     const temExtras = outras > 0.009 || frete > 0.009 || desconto > 0.009;
     const pago = v.pago === undefined ? pagamentos.length > 0 : !!v.pago;
@@ -85,6 +88,7 @@
     // estimativa generosa da altura; no final o canvas é aparado ao tamanho real
     const H = 1300 + itensArr.length * itemH + extraLinhasItens * 26 + pagamentos.length * 34
       + (Number(v.troco) > 0.009 ? 50 : 0) + (linhasObs.length ? 50 + linhasObs.length * 26 : 0)
+      + (temDevolucao ? 190 + (retiradosC.length + estornosC.length + (pendenteC > 0 ? 1 : 0)) * 30 : 0)
       + (temExtras ? 140 : 0) + linhasEndereco.length * 28 + 200;
 
     const cv = document.createElement("canvas");
@@ -298,6 +302,35 @@
       ctx.font = "900 26px Arial";
       ctx.fillText(brl(v.troco), W - padd, y);
       y += 34;
+    }
+
+    if (temDevolucao) {
+      const linhaValor = (txt, valor, fonte) => {
+        const val = brl(valor);
+        ctx.textAlign = "left"; ctx.font = fonte;
+        const maxW = W - 2 * padd - ctx.measureText(val).width - 14;
+        let nome = String(txt), cortou = false;
+        while (nome.length > 6 && ctx.measureText(nome + (cortou ? "…" : "")).width > maxW) { nome = nome.slice(0, -1); cortou = true; }
+        if (cortou) nome += "…";
+        ctx.fillText(nome, padd, y); ctx.textAlign = "right"; ctx.fillText(val, W - padd, y); y += 28;
+      };
+      y += 10;
+      ctx.strokeStyle = "#000"; ctx.lineWidth = 1; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(padd, y); ctx.lineTo(W - padd, y); ctx.stroke(); ctx.setLineDash([]);
+      y += 26; ctx.textAlign = "left"; ctx.font = "900 20px Arial"; ctx.fillText("PEDIDO ALTERADO", padd, y); y += 30;
+      if (retiradosC.length) {
+        ctx.textAlign = "left"; ctx.font = "700 15px Arial"; ctx.fillText("Produtos retirados", padd, y); y += 26;
+        retiradosC.forEach(r => linhaValor(r.quantidade + "x " + String(r.nome || "").trim(), r.valor, "900 16px Arial"));
+      }
+      if (estornosC.length || pendenteC > 0) {
+        ctx.textAlign = "left"; ctx.font = "700 15px Arial"; ctx.fillText("Devolvido ao cliente", padd, y); y += 26;
+        estornosC.forEach(e => linhaValor(e.forma === "pix" ? "Pix" + (e.banco ? " " + e.banco : "") : e.forma === "credito" ? "Crédito na conta do cliente" : "Dinheiro", e.valor, "900 17px Arial"));
+        if (pendenteC > 0) linhaValor("A devolver depois", pendenteC, "900 17px Arial");
+      }
+      const recebidoC = pagamentos.reduce((a, p) => a + (Number(p.valor) || 0), 0), devolvidoC = estornosC.reduce((a, e) => a + Number(e.valor), 0);
+      y += 4; ctx.font = "700 15px Arial";
+      if (recebidoC > 0.009) { ctx.fillStyle = "#000"; linhaValor("Recebido", recebidoC, "700 16px Arial"); }
+      if (devolvidoC > 0.009) linhaValor("Devolvido", devolvidoC, "700 16px Arial");
+      linhaValor("Total do pedido", Number(v.total) || 0, "900 18px Arial");
     }
 
     // observação impressa na nota (texto do sistema, não o do Bling)

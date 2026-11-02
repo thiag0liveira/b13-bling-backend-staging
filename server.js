@@ -4080,7 +4080,7 @@ function marcarMovimentoAlterado(pedidoId, novosPagamentos, alteracao, opts={}){
           if(opts.novoTotal!=null) m.total=+Number(opts.novoTotal).toFixed(2);
           if(opts.frete!=null) m.frete=+Number(opts.frete).toFixed(2);
           if(opts.troco!=null){ if(Number(opts.troco)>0.009) m.troco=+Number(opts.troco).toFixed(2); else delete m.troco; }
-          if(Array.isArray(opts.itens)&&opts.itens.length) m.itens=opts.itens;
+          if(Array.isArray(opts.itens)&&opts.itens.length){ if(!m.itensOriginais&&Array.isArray(opts.itensAntes)&&opts.itensAntes.length) m.itensOriginais=opts.itensAntes; m.itens=opts.itens; if(m.itensOriginais){ const ret=_retiradosDetalhe(m.itensOriginais,m.itens); if(ret.length) m.retirados=ret; else delete m.retirados; } }
           m.alteracoes=[...(m.alteracoes||[]), ...(Array.isArray(opts.alteracoesExtra)?opts.alteracoesExtra:[]), alteracao];
           if(Array.isArray(novosPagamentos)&&novosPagamentos.length) m.pagamentos=novosPagamentos;
           achou=true; mexeu=true;
@@ -7877,6 +7877,7 @@ app.post("/api/caixa-atacado/editar-pagamento",async(req,res)=>{
     const itensNovos=(Array.isArray(req.body.itens)&&req.body.itens.length)?req.body.itens.map(i=>({produtoId:i.produtoId,nome:i.nome||"",quantidade:Number(i.quantidade),valor:Number(i.valor),modoPreco:i.modoPreco||null})):null;
     const diffItensEd=itensNovos?diffItens(itensBling,itensNovos):{mudou:false,retirados:[],acrescentados:[],alterados:[],de:"",para:""};
     const itensMudaramEd=diffItensEd.mudou;
+ const retiradosDet=itensNovos?_retiradosDetalhe(itensBling,itensNovos):[], motivoRet=`Itens retirados na reabertura do pedido #${numero||ped.numero}`+(retiradosDet.length?`: ${_txtRetirados(retiradosDet)}`:"");
     // ===== PEDIDO JÁ PAGO + ITEM RETIRADO = ESTORNO. O que o cliente pagou NÃO é apagado: continua como entrada, e o que volta para ele vira uma saída (estorno) com o meio usado. =====
     const idStr0=String(pedidoId);
     if(_pedidosSincronizando.has(idStr0)) return res.status(409).json({erro:"Este pedido ainda está sincronizando com o Bling da finalização anterior. Aguarde alguns segundos e tente de novo.",aindaSincronizando:true});
@@ -8054,14 +8055,13 @@ app.post("/api/caixa-atacado/editar-pagamento",async(req,res)=>{
       autorizadoPor:auth.funcionario.nome,
       por:(funcs[funcionarioId]?.nome)||"—",
       de:descAntes, para:descDepois,
-      ...(modoEstorno?{estornos:estornosReq.map(e=>({valor:e.valor,forma:e.forma,banco:e.banco})),recebidoLiquido:rec.liquido,novoTotal:valorPedidoNovo}:{}),
-    };
+      ...(modoEstorno?{estornos:estornosReq.map(e=>({valor:e.valor,forma:e.forma,banco:e.banco})),retirados:retiradosDet,recebidoLiquido:rec.liquido,novoTotal:valorPedidoNovo}:{}), };
     const altItens=itensMudaramEd?[{em:Date.now(),tipo:"itens",por:alteracao.por,autorizadoPor:auth.funcionario.nome,de:diffItensEd.de,para:diffItensEd.para,
       retirados:diffItensEd.retirados.map(_fmtItem),acrescentados:diffItensEd.acrescentados.map(_fmtItem),
       alterados:diffItensEd.alterados.map(a=>`${a.nome}: ${a.de.quantidade}x ${fmt(a.de.valor)} → ${a.para.quantidade}x ${fmt(a.para.valor)}`)}]:[];
-    const achouMov=marcarMovimentoAlterado(idStr, linhas.map(p=>({formaNome:p.formaNome||"",valor:+Number(p.valor).toFixed(2)})), alteracao, {novoTotal:valorPedido, frete:Number(req.body.frete||0), itens:itensMudaramEd?itensNovos:null, alteracoesExtra:altItens, troco:trocoEd});
+    const achouMov=marcarMovimentoAlterado(idStr, linhas.map(p=>({formaNome:p.formaNome||"",valor:+Number(p.valor).toFixed(2)})), alteracao, {novoTotal:valorPedido, frete:Number(req.body.frete||0), itens:itensMudaramEd?itensNovos:null, itensAntes:itensBling, alteracoesExtra:altItens, troco:trocoEd});
     if(pendNovo!==null){ try{ const dP2=lerCaixaSessoes(); let mx2=false; for(const s3 of (dP2.sessoes||[])) for(const m3 of (s3.movimentos||[])) if(m3&&m3.tipo==="venda"&&!m3.cancelado&&String(m3.pedidoId)===idStr){ if(pendNovo>0.049) m3.estornoPendente=pendNovo; else delete m3.estornoPendente; mx2=true; } if(mx2) salvarCaixaSessoes(dP2); }catch(e){} }
-    addLog(idStr,"pagamento_editado_caixa",funcionarioId,alteracao.por,{autorizadoPor:auth.funcionario.nome,de:descAntes,para:descDepois,...(modoEstorno?{estorno:estornoTxt,recebidoLiquido:rec.liquido,novoTotal:valorPedidoNovo}:{})});
+    addLog(idStr,"pagamento_editado_caixa",funcionarioId,alteracao.por,{autorizadoPor:auth.funcionario.nome,de:descAntes,para:descDepois,...(modoEstorno?{estorno:estornoTxt,retirados:retiradosDet.map(i=>`${i.quantidade}x ${i.nome} R$ ${i.valor}`).slice(0,12),recebidoLiquido:rec.liquido,novoTotal:valorPedidoNovo}:{})});
         let nfceDesat=null;
     if(notaAtiva){ nfceDesat={numero:notaAtiva.numero,valorNota:notaAtiva.valorNota,totalAntes:totalPedido,novoTotal:valorPedidoNovo};
       try{ const E=lerNfceEmitidas(), rg=E[idStr]; if(rg){ rg.desatualizada={em:Date.now(),por:alteracao.por,totalAntes:totalPedido,novoTotal:valorPedidoNovo,valorNota:notaAtiva.valorNota}; salvarNfceEmitidas(E); }
@@ -8073,7 +8073,7 @@ app.post("/api/caixa-atacado/editar-pagamento",async(req,res)=>{
       const registrados=[], falhas=[]; let feito=0;
       if(estornosReq.length){
         const dE=lerCaixaSessoes(), sxE=(dE.sessoes||[]).find(x=>sxEst&&x.id===sxEst.id);
-        for(const e of estornosReq){ const r=sxE?_aplicarEstornoCliente(dE,sxE,{valor:e.valor,forma:e.forma,banco:e.banco,pedidoId:idStr,pedidoNumero:String(numero||ped.numero||""),clienteId:ped.contato?.id||"",clienteNome:ped.contato?.nome||"",motivo:`Itens retirados na reabertura do pedido #${numero||ped.numero}`,quem:auth.funcionario.nome||"",operador:alteracao.por,origem:"Reabertura do pedido (item retirado)"}):{erro:"caixa não encontrado"};
+        for(const e of estornosReq){ const r=sxE?_aplicarEstornoCliente(dE,sxE,{valor:e.valor,forma:e.forma,banco:e.banco,pedidoId:idStr,pedidoNumero:String(numero||ped.numero||""),clienteId:ped.contato?.id||"",clienteNome:ped.contato?.nome||"",motivo:motivoRet,itens:retiradosDet,quem:auth.funcionario.nome||"",operador:alteracao.por,origem:"Reabertura do pedido (item retirado)"}):{erro:"caixa não encontrado"};
           if(r.erro) falhas.push(r.erro); else { registrados.push({valor:r.mov.valor,forma:r.mov.forma,banco:r.mov.banco}); feito+=r.mov.valor; } }
         salvarCaixaSessoes(dE);
       }
@@ -8083,7 +8083,7 @@ app.post("/api/caixa-atacado/editar-pagamento",async(req,res)=>{
           const dP3=lerCaixaSessoes(); let mx3=false; for(const s4 of (dP3.sessoes||[])) for(const m4 of (s4.movimentos||[])) if(m4&&m4.tipo==="venda"&&!m4.cancelado&&String(m4.pedidoId)===idStr&&m4.estornoPendente){ delete m4.estornoPendente; mx3=true; } if(mx3) salvarCaixaSessoes(dP3); }catch(e){}
       }
       if(restante>0.05&&(estornoPendenteReq||falhas.length)){
-        const pg2=lerPag(), rg=pg2[idStr]; if(rg){ rg.estornoPendente={valor:restante,desde:Date.now(),por:alteracao.por,autorizadoPor:auth.funcionario.nome,motivo:`Itens retirados na reabertura do pedido #${numero||ped.numero}`}; salvarPag(pg2); }
+        const pg2=lerPag(), rg=pg2[idStr]; if(rg){ rg.estornoPendente={valor:restante,desde:Date.now(),por:alteracao.por,autorizadoPor:auth.funcionario.nome,motivo:motivoRet}; salvarPag(pg2); }
         try{ const dP=lerCaixaSessoes(); let mx=false; for(const s2 of (dP.sessoes||[])) for(const m2 of (s2.movimentos||[])) if(m2&&m2.tipo==="venda"&&!m2.cancelado&&String(m2.pedidoId)===idStr){ m2.estornoPendente=restante; mx=true; } if(mx) salvarCaixaSessoes(dP); }catch(e){}
         registrarAviso({tipo:"estorno_pendente",titulo:`Estorno pendente — pedido #${numero||ped.numero} (R$ ${fmt(restante)} a devolver)`,pedidoId:idStr,numero:numero||ped.numero,operador:alteracao.por,origem:"Reabertura no Caixa Atacado",fingerprint:`estornopend-${idStr}-${Date.now()}`,oQueFazer:`O pedido #${numero||ped.numero} foi reaberto e teve item retirado: o cliente já tinha pago ${fmt(rec.liquido)} e o novo total é ${fmt(valorPedidoNovo)}. Faltam ${fmt(restante)} a devolver. Use "Estorno ao cliente" no Caixa Atacado informando o número do pedido.${falhas.length?" Motivo da pendência: "+falhas.join("; "):""}`});
         addLog(idStr,"estorno_pendente",funcionarioId,alteracao.por,{valor:restante,autorizadoPor:auth.funcionario.nome});
@@ -8115,7 +8115,7 @@ app.post("/api/caixa-atacado/editar-pagamento",async(req,res)=>{
       }
     }
 
-    res.json({ok:true, nfceDesatualizada:nfceDesat, avisoPagamento, avisoSituacao:avisoSitEd, estorno:estornoResp, autorizadoPor:auth.funcionario.nome, de:descAntes, para:descDepois, numero:numero||ped.numero, movimentoAtualizado:achouMov, incluidoNoCaixa,
+    res.json({ok:true, retirados:retiradosDet, valorRetirado:_round2(retiradosDet.reduce((x,i)=>x+i.valor,0)), nfceDesatualizada:nfceDesat, avisoPagamento, avisoSituacao:avisoSitEd, estorno:estornoResp, autorizadoPor:auth.funcionario.nome, de:descAntes, para:descDepois, numero:numero||ped.numero, movimentoAtualizado:achouMov, incluidoNoCaixa,
       itensAlterados:itensMudaramEd?{retirados:diffItensEd.retirados.map(_fmtItem),acrescentados:diffItensEd.acrescentados.map(_fmtItem),alterados:diffItensEd.alterados.map(a=>`${a.nome}: ${a.de.quantidade}x→${a.para.quantidade}x`)}:null,
       estoqueReposto:estoqueRepostoEd,
       estoque: relancamento ? (relancamento.ok
@@ -9395,6 +9395,9 @@ function _retiradosDe(pedidoId,propId,itensAtuais){
   return {lista,informado:inf?{em:inf.em,por:inf.por||""}:null,pendente:pend};
 }
 function _marcarRetiradosInformados(pedidoId,propId,por,lista){ const ks=_chavesBaseItens(pedidoId,propId), B={..._lerBaseItens()}; let ok=false; ks.forEach(k=>{ if(B[k]&&B[k].base){ B[k]={...B[k],informado:{em:Date.now(),por:por||"",lista:(lista||[]).map(x=>({produtoId:String(x.produtoId),quantidade:Number(x.quantidade)}))}}; ok=true; } }); if(ok) _salvarBaseItens(B); return ok; }
+function _retiradosDetalhe(antes,depois){ const ag=l=>{ const M={}; (l||[]).forEach(i=>{ if(!i||!i.produtoId) return; const k=String(i.produtoId), q=Number(i.quantidade)||0, v=Number(i.valor)||0, o=M[k]||(M[k]={produtoId:k,nome:"",q:0,t:0}); o.q+=q; o.t+=q*v; o.nome=o.nome||i.nome||""; }); return M; };
+  const A=ag(antes), D=ag(depois), out=[]; Object.keys(A).forEach(k=>{ const a=A[k], qd=D[k]?D[k].q:0; if(a.q>qd+0.0001){ const un=a.q>0?a.t/a.q:0, qr=+(a.q-qd).toFixed(4); out.push({produtoId:k,nome:a.nome||(D[k]&&D[k].nome)||"",quantidade:qr,valorUn:+un.toFixed(2),valor:+(qr*un).toFixed(2)}); } }); return out; }
+function _txtRetirados(l){ const t=(l||[]).map(i=>`${i.quantidade}× ${String(i.nome||"produto "+i.produtoId).slice(0,40)} (R$ ${Number(i.valor).toFixed(2).replace(".",",")})`).join("; "); return t.length>150?t.slice(0,147)+"…":t; }
 function diffItens(antes, depois){
   // o MESMO produto pode vir em duas linhas (ex.: preço de promoção + preço normal): soma quantidade e valor por produto, senão a segunda linha sobrescrevia a primeira e uma retirada passava despercebida
   const agrupa=(lista)=>{ const M={}; (lista||[]).forEach(i=>{ if(!i.produtoId) return; const k=String(i.produtoId), q=Number(i.quantidade)||0, v=Number(i.valor)||0; const o=M[k]||(M[k]={...i,quantidade:0,total:0}); o.quantidade+=q; o.total+=q*v; o.nome=o.nome||i.nome; });
@@ -13262,9 +13265,9 @@ function _aplicarEstornoCliente(d,sx,o){
   if(forma==="dinheiro"){ const r=resumoSessaoCaixa(sx); if(v>r.esperadoGaveta+0.009) return {erro:`Não há dinheiro suficiente na gaveta (esperado ${brlN(r.esperadoGaveta)}). Use Pix ou crédito, ou faça um suprimento antes.`,status:409}; }
   const pid=String(o.pedidoId||""), cliId=o.clienteId?String(o.clienteId):"", cliNome=String(o.clienteNome||""), num=String(o.pedidoNumero||"");
   if(forma==="credito"&&!cliId) return {erro:"para devolver como crédito, informe o nº do pedido (para achar o cliente)",status:400};
-  const quem=o.quem||"", mov={tipo:"estorno",em:Date.now(),valor:v,forma,banco:forma==="pix"?String(o.banco).slice(0,60):"",pedidoId:pid||null,pedidoNumero:num,clienteId:cliId||null,clienteNome:cliNome.slice(0,120),motivo:String(o.motivo||"").trim().slice(0,200),autorizadoPor:quem,por:String(o.operador||"").slice(0,60),...(o.origem?{origem:String(o.origem).slice(0,60)}:{})};
+  const quem=o.quem||"", mov={tipo:"estorno",em:Date.now(),valor:v,forma,banco:forma==="pix"?String(o.banco).slice(0,60):"",pedidoId:pid||null,pedidoNumero:num,clienteId:cliId||null,clienteNome:cliNome.slice(0,120),motivo:String(o.motivo||"").trim().slice(0,200),autorizadoPor:quem,por:String(o.operador||"").slice(0,60),...(o.origem?{origem:String(o.origem).slice(0,60)}:{}),...(Array.isArray(o.itens)&&o.itens.length?{itens:o.itens.slice(0,40)}:{})};
   (sx.movimentos||=[]).push(mov);
-  if(forma==="credito"){ const C=lerCreditos(); C.seq++; C.movs.push({id:"cr"+C.seq,clienteId:cliId,clienteNome:cliNome,em:Date.now(),tipo:"entrada",valor:v,forma:"Estorno",descricao:`Estorno do pedido ${num||"—"}: ${mov.motivo}`,pedidoNumero:num,pedidoId:pid||null,por:quem}); salvarJSON(CLIENTES_CREDITO_FILE,C); }
+  if(forma==="credito"){ const C=lerCreditos(); C.seq++; C.movs.push({id:"cr"+C.seq,clienteId:cliId,clienteNome:cliNome,em:Date.now(),tipo:"entrada",valor:v,forma:"Estorno",descricao:`Estorno do pedido ${num||"—"}: ${mov.motivo}`,pedidoNumero:num,pedidoId:pid||null,por:quem,...(mov.itens?{itens:mov.itens}:{})}); salvarJSON(CLIENTES_CREDITO_FILE,C); }
   if(pid){ _amarrarEstornoAoPedido(d,pid,mov,quem); addLog(pid,"estorno_cliente",null,quem,{valor:v,forma,banco:mov.banco,motivo:mov.motivo,caixa:sx.id,origem:mov.origem||""}); }
   return {mov}; }
 app.post("/api/caixa-sessao/:id/estorno",async(req,res)=>{
