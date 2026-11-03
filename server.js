@@ -7075,13 +7075,12 @@ app.post("/api/pedidos/:id/editar-itens",async(req,res)=>{
     // CONFERE O QUE O BLING GRAVOU DE VERDADE (itens e situação). Antes só se olhava o total: o Bling podia responder "salvei" e não ficar com o item
     // pedido (ou deixar o pedido em "Em digitação"), e o sistema registrava a alteração como feita mesmo assim.
     if(pedNovo){
-      const mapaIt=l=>{ const m={}; (l||[]).forEach(i=>{ const k=String(i.produto?.id!=null?i.produto.id:i.produtoId); m[k]=_round2((m[k]||0)+(Number(i.quantidade)||0)); }); return m; };
-      const esp=mapaIt(itens), grav=mapaIt(pedNovo.itens), nomeDe={}; itens.forEach(i=>{ nomeDe[String(i.produtoId)]=i.nome||i.descricao||""; }); (pedNovo.itens||[]).forEach(i=>{ if(i.produto?.id!=null&&!nomeDe[String(i.produto.id)]) nomeDe[String(i.produto.id)]=i.descricao||""; });
-      const dif=[]; new Set([...Object.keys(esp),...Object.keys(grav)]).forEach(k=>{ if(Math.abs((esp[k]||0)-(grav[k]||0))>0.0005) dif.push({produtoId:k,nome:nomeDe[k]||k,pedido:esp[k]||0,noBling:grav[k]||0}); });
-      if(dif.length){
-        const txt=dif.slice(0,6).map(d=>`${d.nome}: pedido ${d.pedido}, no Bling ${d.noBling}`).join("; ");
-        try{ addLog(String(id),"itens_nao_gravados_bling",null,funcionarioNome||"",{diferencas:dif.slice(0,10)}); registrarAviso({tipo:"itens_nao_gravados_bling",titulo:`Pedido #${ped.numero||id}: o Bling NÃO gravou os itens da edição`,pedidoId:String(id),numero:ped.numero,operador:funcionarioNome||"",origem:"Editar itens",fingerprint:`naogravou-${id}-${Date.now()}`,oQueFazer:`O Bling respondeu que salvou, mas os itens ficaram diferentes do pedido: ${txt}. Nada foi registrado como alterado no sistema. Confira o estoque desses produtos e o pedido no Bling e tente de novo.`}); }catch(e){}
-        return res.status(502).json({erro:`O Bling respondeu que salvou, mas os itens NÃO ficaram como você pediu (${txt}). Nada foi registrado como alterado. Confira o estoque desses produtos no Bling e tente de novo.`,divergencia:dif,situacaoNoBling:nomeSituacao(Number(pedNovo.situacao?.id||0))}); }
+      const conf=_conferirItensGravados(itens,pedNovo.itens);
+      if(conf.equivalente) _avisarProdutosMesmoCodigo(conf,{pedidoId:String(id),numero:ped.numero,operador:funcionarioNome||"",origem:"Editar itens"});
+      if(!conf.ok){
+        const dif=conf.dif, txt=dif.slice(0,6).map(d=>`${d.nome}: pedido ${d.pedido}, no Bling ${d.noBling}`).join("; "), rev=await _reverterItensBling(id,ped,funcionarioNome||"","Editar itens");
+        try{ addLog(String(id),"itens_nao_gravados_bling",null,funcionarioNome||"",{diferencas:dif.slice(0,10),devolvido:rev.ok}); registrarAviso({tipo:"itens_nao_gravados_bling",titulo:rev.ok?`Pedido #${ped.numero||id}: o Bling NÃO gravou os itens da edição (devolvi o pedido ao que era)`:`URGENTE · Pedido #${ped.numero||id}: o Bling gravou itens errados e não consegui devolver`,pedidoId:String(id),numero:ped.numero,operador:funcionarioNome||"",origem:"Editar itens",fingerprint:`naogravou-${id}-${Date.now()}`,oQueFazer:`O Bling respondeu que salvou, mas os itens ficaram diferentes do pedido: ${txt}. ${rev.ok?"O pedido foi devolvido ao que era antes e conferido no Bling.":"NÃO consegui devolver o pedido ao que era ("+(rev.erro||"erro")+"). Abra o pedido no Bling e corrija os itens agora."} Nada foi registrado como alterado no sistema.`}); }catch(e){}
+        return res.status(502).json({erro:`O Bling respondeu que salvou, mas os itens NÃO ficaram como você pediu (${txt}). ${rev.ok?"Devolvi o pedido ao que era antes e conferi no Bling. Tente de novo.":"ATENÇÃO: não consegui devolver o pedido ao que era. Abra o pedido no Bling e corrija os itens agora."} Nada foi registrado como alterado.`,divergencia:dif,devolvido:rev.ok,situacaoNoBling:nomeSituacao(Number(pedNovo.situacao?.id||0))}); }
     }
     let avisoSituacaoEd=null;
     if(pedNovo&&Number(pedNovo.situacao?.id||0)&&Number(pedNovo.situacao.id)!==_sitEd){ // o Bling deixou o pedido em outra etapa (ex.: "Em digitação"): tenta devolver à etapa em que estava
@@ -8012,11 +8011,12 @@ app.post("/api/caixa-atacado/editar-pagamento",async(req,res)=>{
     try{ await sleep(350); const chk=await bling(`/pedidos/vendas/${pedidoId}`).then(r=>r?.data).catch(()=>null);
       if(chk){
         if(itensMudaramEd){
-          const mp=l=>{ const m={}; (l||[]).forEach(i=>{ const k=String(i.produto?.id!=null?i.produto.id:i.produtoId); m[k]=_round2((m[k]||0)+(Number(i.quantidade)||0)); }); return m; }, esp=mp(itensNovos), grav=mp(chk.itens), dif=[];
-          new Set([...Object.keys(esp),...Object.keys(grav)]).forEach(k=>{ if(Math.abs((esp[k]||0)-(grav[k]||0))>0.0005) dif.push(`produto ${k}: pedido ${esp[k]||0}, no Bling ${grav[k]||0}`); });
-          if(dif.length){
-            try{ addLog(idStr,"itens_nao_gravados_bling",funcionarioId,funcsNome,{diferencas:dif.slice(0,10),origem:"Caixa Atacado (reabertura)"}); registrarAviso({tipo:"itens_nao_gravados_bling",titulo:`Pedido #${numero||ped.numero}: o Bling NÃO gravou os itens da reabertura`,pedidoId:idStr,numero:numero||ped.numero,operador:funcsNome,origem:"Caixa Atacado (reabertura)",fingerprint:`naogravou-${idStr}-${Date.now()}`,oQueFazer:`O Bling respondeu que salvou, mas os itens ficaram diferentes do pedido (${dif.slice(0,4).join("; ")}). Nada foi registrado no caixa nem no pagamento. Confira o pedido no Bling e tente de novo.`}); }catch(e){}
-            return res.status(502).json({erro:`O Bling respondeu que salvou, mas os itens NÃO ficaram como você pediu (${dif.slice(0,4).join("; ")}). Nada foi registrado no caixa nem no pagamento. Confira o pedido no Bling e tente de novo.`,divergencia:dif});
+          const conf=_conferirItensGravados(itensNovos,chk.itens);
+          if(conf.equivalente) _avisarProdutosMesmoCodigo(conf,{pedidoId:idStr,numero:numero||ped.numero,operador:funcsNome,origem:"Caixa Atacado (reabertura)"});
+          if(!conf.ok){
+            const dif=conf.dif.map(d=>`${d.nome}: pedido ${d.pedido}, no Bling ${d.noBling}`), rev=await _reverterItensBling(pedidoId,ped,funcsNome,"Caixa Atacado (reabertura)");
+            try{ addLog(idStr,"itens_nao_gravados_bling",funcionarioId,funcsNome,{diferencas:conf.dif.slice(0,10),origem:"Caixa Atacado (reabertura)",devolvido:rev.ok}); registrarAviso({tipo:"itens_nao_gravados_bling",titulo:rev.ok?`Pedido #${numero||ped.numero}: o Bling NÃO gravou os itens da reabertura (devolvi o pedido ao que era)`:`URGENTE · Pedido #${numero||ped.numero}: o Bling gravou itens errados e não consegui devolver`,pedidoId:idStr,numero:numero||ped.numero,operador:funcsNome,origem:"Caixa Atacado (reabertura)",fingerprint:`naogravou-${idStr}-${Date.now()}`,oQueFazer:`O Bling respondeu que salvou, mas os itens ficaram diferentes do pedido (${dif.slice(0,4).join("; ")}). ${rev.ok?"O pedido foi devolvido ao que era antes e conferido no Bling.":"NÃO consegui devolver o pedido ao que era ("+(rev.erro||"erro")+"). Abra o pedido no Bling e corrija os itens agora."} Nada foi registrado no caixa nem no pagamento.`}); }catch(e){}
+            return res.status(502).json({erro:`O Bling respondeu que salvou, mas os itens NÃO ficaram como você pediu (${dif.slice(0,4).join("; ")}). ${rev.ok?"Devolvi o pedido ao que era antes e conferi no Bling. ":"ATENÇÃO: não consegui devolver o pedido ao que era. Abra o pedido no Bling e corrija os itens agora. "}Nada foi registrado no caixa nem no pagamento. ${rev.ok?"Tente de novo.":""}`.trim(),divergencia:dif,devolvido:rev.ok});
           }
           if(Math.abs((Number(chk.total)||0)-valorPedidoNovo)>0.05) avisoPagamento=(avisoPagamento?avisoPagamento+" ":"")+`Atenção: o total ficou ${fmt(chk.total)} no Bling e o sistema esperava ${fmt(valorPedidoNovo)}. Confira o pedido.`;
         }
@@ -13811,6 +13811,11 @@ function _analiseOperacao(mes){
 }
 app.get("/api/analise-operacao",requireAcesso("acesso_margem_bruta"),(req,res)=>{ try{ const hoje=new Date(Date.now()-3*3600e3).toISOString().slice(0,7), mes=/^\d{4}-(0[1-9]|1[0-2])$/.test(String(req.query.mes||""))?req.query.mes:hoje; res.json(_analiseOperacao(mes)); }catch(e){ res.status(500).json({erro:e.message}); } });
 app.get("/analise-operacao",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"analise-operacao.html")); });
+app.get("/api/diag/produtos-duplicados",requireAcesso("acesso_produtos_gestao"),(req,res)=>{ try{ const P=lerProdutosBling().porId, ids=String(req.query.ids||"").split(",").map(x=>x.trim()).filter(Boolean), fx=(id,x)=>({id,nome:x.n||"",codigo:x.c||"",situacao:x.s||"",estoque:x.est!=null?Number(x.est):null,precoVarejo:Number(x.p)||null,custo:Number(x.pc)||null});
+  const consultados=ids.map(id=>P[id]?fx(id,P[id]):{id,nome:"(não está no cadastro local)"}), porCod={}, porNome={}; Object.entries(P).forEach(([id,x])=>{ if(!x) return; const c=String(x.c||"").trim().toLowerCase(), n=String(x.n||"").trim().toLowerCase(); if(c) (porCod[c]||(porCod[c]=[])).push(fx(id,x)); if(n) (porNome[n]||(porNome[n]=[])).push(fx(id,x)); });
+  const dup=o=>Object.entries(o).filter(([k,v])=>v.length>1).map(([k,v])=>({chave:k,cadastros:v})).slice(0,60);
+  const doPedido=ids.map(id=>{ const x=P[id]; if(!x) return null; const c=String(x.c||"").trim().toLowerCase(), n=String(x.n||"").trim().toLowerCase(); return {id,mesmoCodigo:(porCod[c]||[]).filter(y=>y.id!==id),mesmoNome:(porNome[n]||[]).filter(y=>y.id!==id)}; }).filter(Boolean);
+  res.json({ok:true,consultados,outrosCadastrosComOMesmoCodigoOuNome:doPedido,totalCodigosDuplicados:Object.values(porCod).filter(v=>v.length>1).length,totalNomesDuplicados:Object.values(porNome).filter(v=>v.length>1).length,codigosDuplicados:dup(porCod),nomesDuplicados:dup(porNome)}); }catch(e){ res.status(500).json({erro:e.message}); } });
 // ===================== VENDA ABAIXO DO CUSTO =====================
 // Confere QUALQUER pedido (atacado, varejo, feito no sistema ou só no Bling): se algum item foi vendido por menos do que o custo cadastrado do produto, gera aviso e registra o prejuízo.
 // Quando confere: a cada aviso do Bling de pedido novo/alterado (webhook) e numa varredura periódica dos últimos dias (pega o que o aviso perder, ou se os avisos estiverem parados).
@@ -15226,6 +15231,35 @@ function recalcularFreteEdicao(id,ped,totalItensNovo){
   }catch(e){ console.error("recalcularFreteEdicao:",e.message); }
   return r;
 }
+// ===== CONFERÊNCIA DO QUE O BLING GRAVOU NOS ITENS DO PEDIDO =====
+// Compara por produto; se divergir, compara por CÓDIGO e por DESCRIÇÃO (o Bling pode devolver dois cadastros do mesmo produto como um só, o que não é erro de gravação).
+function _conferirItensGravados(esperados,gravados){
+  const P=lerProdutosBling().porId, nrm=x=>String(x||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/\s+/g," ").trim();
+  const idDe=i=>String(i&&i.produto&&i.produto.id!=null?i.produto.id:(i&&i.produtoId!=null?i.produtoId:""));
+  const soma=(l,chave)=>{ const m={}; (l||[]).forEach(i=>{ const k=chave(i); if(!k) return; m[k]=_round2((m[k]||0)+(Number(i.quantidade)||0)); }); return m; };
+  const igual=(a,b)=>{ for(const k of new Set([...Object.keys(a),...Object.keys(b)])) if(Math.abs((a[k]||0)-(b[k]||0))>0.0005) return false; return true; };
+  const nomeDe={}; (gravados||[]).forEach(i=>{ const k=idDe(i); if(k&&!nomeDe[k]) nomeDe[k]=i.descricao||""; }); (esperados||[]).forEach(i=>{ const k=idDe(i); if(k&&(i.nome||i.descricao)) nomeDe[k]=i.nome||i.descricao; }); Object.keys(nomeDe).forEach(k=>{ if(!nomeDe[k]) nomeDe[k]=(P[k]||{}).n||""; });
+  const E=soma(esperados,idDe), G=soma(gravados,idDe);
+  if(igual(E,G)) return {ok:true,equivalente:false,dif:[],nomeDe};
+  const cod=i=>{ const k=idDe(i), c=String((i&&i.codigo)||(P[k]||{}).c||"").trim().toLowerCase(); return c?"c:"+c:""; };
+  const todos=(l,f)=>(l||[]).every(i=>f(i));
+  const pares=()=>({faltam:Object.keys(E).filter(k=>!(k in G)),sobram:Object.keys(G).filter(k=>!(k in E)||G[k]>(E[k]||0)+0.0005)});
+  if(todos(esperados,cod)&&todos(gravados,cod)&&igual(soma(esperados,cod),soma(gravados,cod))) return {ok:true,equivalente:true,motivo:"mesmo código",...pares(),nomeDe,dif:[]};
+  const desc=i=>nrm(i&&(i.nome||i.descricao)||(P[idDe(i)]||{}).n||""), descG=i=>nrm(i&&i.descricao||(P[idDe(i)]||{}).n||"");
+  if(todos(esperados,desc)&&todos(gravados,descG)&&igual(soma(esperados,desc),soma(gravados,descG))) return {ok:true,equivalente:true,motivo:"mesma descrição",...pares(),nomeDe,dif:[]};
+  const dif=[]; new Set([...Object.keys(E),...Object.keys(G)]).forEach(k=>{ if(Math.abs((E[k]||0)-(G[k]||0))>0.0005) dif.push({produtoId:k,nome:nomeDe[k]||(P[k]||{}).n||("produto "+k),pedido:E[k]||0,noBling:G[k]||0}); });
+  return {ok:false,equivalente:false,dif,nomeDe};
+}
+function _avisarProdutosMesmoCodigo(conf,ctx){ try{ const ids=[...(conf.faltam||[]),...(conf.sobram||[])].sort(), nm=k=>`${conf.nomeDe[k]||("produto "+k)} (id ${k})`;
+  registrarAviso({tipo:"produtos_mesmo_codigo",titulo:`Produtos com o mesmo ${conf.motivo==="mesma descrição"?"nome":"código"} no Bling: ${ids.slice(0,2).map(k=>conf.nomeDe[k]||k).join(" e ")}`,pedidoId:String(ctx.pedidoId||""),numero:ctx.numero,operador:ctx.operador||"",origem:ctx.origem||"",fingerprint:`dupcod-${ids.join("-")}`,
+    oQueFazer:`O Bling devolveu como um só produto os cadastros ${ids.map(nm).join(" e ")}. A alteração do pedido foi gravada corretamente, mas o estoque e os relatórios podem juntar os dois. Unifique os cadastros ou corrija o código no Bling. Para ver os dois: /diag?api=%2Fapi%2Fdiag%2Fprodutos-duplicados%3Fids%3D${ids.join("%2C")}`}); }catch(e){} }
+// Se o Bling gravou itens diferentes do pedido, devolve o pedido ao que era antes (itens e parcelas) e confere de novo no Bling.
+async function _reverterItensBling(pedidoId,pedOriginal,quem,origem){
+  try{ const orig=(pedOriginal.itens||[]).map(i=>({produtoId:i.produto&&i.produto.id,nome:i.descricao||"",quantidade:Number(i.quantidade),valor:Number(i.valor)})), parcelas=(pedOriginal.parcelas||[]).map(p=>({formaId:p.formaPagamento&&p.formaPagamento.id,valor:Number(p.valor)||0}));
+    const r=await atualizarItensBling(pedidoId,orig,"",{ped:pedOriginal,parcelas,itensParaEstoque:orig}); await sleep(350);
+    const chk=await bling(`/pedidos/vendas/${pedidoId}`).then(x=>x&&x.data).catch(()=>null), conf=chk?_conferirItensGravados(orig,chk.itens):null;
+    const ok=!!(r&&r.ok)&&!!(conf&&conf.ok); try{ addLog(String(pedidoId),ok?"itens_devolvidos_apos_falha_bling":"itens_devolucao_falhou",null,quem||"",{origem:origem||"",erro:(r&&r.erro)||null}); }catch(e){}
+    return {ok,erro:(r&&r.erro)||(conf&&!conf.ok?"o Bling não confirmou os itens originais":null)}; }catch(e){ return {ok:false,erro:e.message}; } }
 async function atualizarItensBling(id,itens,obsExtra,opts={}){
   try{
     // opts.ped: pedido já lido pelo chamador (evita 1 GET). opts.parcelas: [{formaId,valor}]
