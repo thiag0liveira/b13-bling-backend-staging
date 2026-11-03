@@ -12791,6 +12791,20 @@ app.get("/api/entrada-nota/buscar-notas",acessoEntradaNota,(req,res)=>{
     res.json({ok:true,notas:L});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
+app.get("/api/entrada-nota/sugerir-juntas",acessoEntradaNota,(req,res)=>{
+ // Fornecedor que juntou mais de um pedido num boleto só: com o valor que falta cobrir (boleto menos a soma das notas), procura notas do MESMO fornecedor, ainda sem financeiro, que fechem a conta.
+ try{ const eu=String(req.query.notaId||""), n=_notaEntrada(eu); if(!n) return res.status(404).json({erro:"nota não encontrada"});
+  const alvo=_round2(Number(String(req.query.alvo||"").replace(",","."))||0), grupo=new Set(_grupoDaNota(eu)), nrm=x=>String(x||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]/g,""),
+   cnpj=String(n.emitente&&n.emitente.cnpj||"").replace(/\D/g,""), nome=nrm(n.emitente&&n.emitente.nome), emi=Number(n.emissao)||Date.now(), cand=[];
+  new Set([...(_FISCAL&&_FISCAL.listarNotas?_FISCAL.listarNotas().map(x=>String(x.id)):[]),...Object.keys(_semNota||{})]).forEach(id=>{ if(grupo.has(id)) return; const o=_notaEntrada(id); if(!o||_finNota(o)) return;
+   const c2=String(o.emitente&&o.emitente.cnpj||"").replace(/\D/g,""), n2=nrm(o.emitente&&o.emitente.nome), mesmo=(cnpj&&c2&&cnpj===c2)||(nome.length>=6&&nome===n2); if(!mesmo) return;
+   const r=_resumoNotaJunta(id); if(!r||!(r.vNF>0)) return; const dias=Math.round(((Number(r.emissao)||emi)-emi)/86400000); if(Math.abs(dias)>75) return; cand.push({...r,diasDaNota:dias}); });
+  cand.sort((a,b)=>Math.abs(a.diasDaNota)-Math.abs(b.diasDaNota)); const C=cand.slice(0,30), combos=[];
+  if(alvo>0.05){ const busca=(ini,tam,acum,tot)=>{ if(tam>0&&Math.abs(tot-alvo)<=0.05) combos.push({notas:acum.map(x=>x.id),total:_round2(tot),diferenca:_round2(tot-alvo),itens:acum.map(x=>({id:x.id,numero:x.numero,vNF:x.vNF,emissao:x.emissao}))}); if(tam>=3) return; for(let i=ini;i<C.length;i++) busca(i+1,tam+1,[...acum,C[i]],tot+C[i].vNF); };
+   busca(0,0,[],0); combos.sort((a,b)=>a.notas.length-b.notas.length||Math.abs(a.diferenca)-Math.abs(b.diferenca)); }
+  res.json({ok:true,alvo,fornecedor:(n.emitente&&n.emitente.nome)||"",candidatas:cand.slice(0,12),combinacoes:combos.slice(0,5)});
+ }catch(e){ res.status(500).json({erro:e.message}); }
+});
 app.post("/api/entrada-nota/juntar",acessoEntradaNota,async(req,res)=>{
   try{ const b=req.body||{}, n=_notaEntrada(String(b.notaId||"")), o=_notaEntrada(String(b.outraId||"")); if(!n||!o) return res.status(404).json({erro:"nota não encontrada"});
     if(String(n.id)===String(o.id)) return res.status(400).json({erro:"escolha outra nota"});

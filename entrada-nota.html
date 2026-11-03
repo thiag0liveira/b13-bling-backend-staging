@@ -340,11 +340,42 @@ const dataJ = ms => ms ? new Date(Number(ms)).toLocaleDateString("pt-BR", { time
 function blocoJuntas(n, comValores) {
   const js = n.notasJuntas || [], travado = !!(n.financeiroFeito || n.financeiro);
   const chips = js.map(x => `<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin:4px 0;background:#0f0d24;border:1px solid #37327a;border-radius:8px;padding:6px 8px"><span class="ic" style="white-space:normal;color:#fff">NF ${esc(x.numero || "s/n")} · ${esc(x.fornecedor || "")}${comValores && x.vNF != null ? " · " + brl(x.vNF) : ""}</span>${travado ? "" : `<button class="btn btn-ghost" style="padding:3px 8px" onclick="desjuntar('${esc(x.id)}')">✕</button>`}</div>`).join("");
+    setTimeout(sugerirJuntas, 80);
   return `<div style="margin:8px 0;padding:8px;border:1px dashed #3a3480;border-radius:10px"><div class="ic" style="white-space:normal;margin-bottom:4px">🔗 Um mesmo boleto pagando mais de uma nota</div>
     ${chips || '<div class="ic">Nenhuma outra nota ligada a este boleto.</div>'}
-    ${travado ? "" : `<button class="btn btn-ghost" style="padding:6px 12px;margin-top:4px" onclick="abrirJuntar()">➕ Juntar outra nota neste boleto</button>`}
+    ${travado ? "" : `<button class="btn btn-ghost" style="padding:6px 12px;margin-top:4px" onclick="abrirJuntar()">➕ Juntar outra nota neste boleto</button> <label class="btn btn-mag" style="padding:6px 12px;margin-top:4px;cursor:pointer;display:inline-block">📷 Ler outra nota por foto<input type="file" accept="image/*,application/pdf" multiple style="display:none" onchange="lerOutraNota(this.files);this.value=''"></label>`}
+    <div id="juntarMsg" style="margin-top:6px"></div><div id="juntarSug" style="margin-top:6px"></div>
     <div id="juntarBox" style="${JUNTAR_ABERTO ? "" : "display:none;"}margin-top:6px"><input id="juntarQ" placeholder="🔎 nº da nota ou fornecedor" oninput="buscarJuntar()" style="width:100%"><div id="juntarRes" class="ic" style="margin-top:4px"></div></div></div>`;
 }
+// ---- ler OUTRA nota por foto (igual à primeira) e ligar ao mesmo boleto; e prever notas que fecham o valor do boleto ----
+let _sugKey = "", _tSug = null;
+async function lerOutraNota(files) {
+  const m = document.getElementById("juntarMsg"); if (!files || !files.length || !m) return; const keep = (BOL || []).map(d => ({ ...d })); JUNTAR_ABERTO = false; m.innerHTML = `<div class="ic">⏳ Lendo a outra nota… (leva uns segundos)</div>`;
+  try { const imagens = [], pdfs = [];
+    for (const f of [...files].slice(0, 4)) { if (/pdf/i.test(f.type) || /\.pdf$/i.test(f.name || "")) { if (f.size > 8 * 1048576) { m.innerHTML = `<div class="err">O PDF ${esc(f.name)} passa de 8 MB.</div>`; return; } pdfs.push(await new Promise((ok, erro) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = erro; r.readAsDataURL(f); })); } else imagens.push(await reduzir(f)); }
+    const { ok, j } = await api("/api/entrada-nota/foto", { method: "POST", body: JSON.stringify({ imagens, pdfs }) });
+    if (!ok) { m.innerHTML = `<div class="err">${esc(j.erro || "Não consegui ler a foto.")}</div>`; return; }
+    if (j.lidaComo === "boleto") { m.innerHTML = `<div class="err">Essa foto é de um boleto, não de uma nota. Para ler uma nota, fotografe a DANFE ou o pedido do fornecedor.</div>`; return; }
+    const o = j.nota; if (!o || !o.id) { m.innerHTML = `<div class="err">Não consegui identificar a nota nessa foto.</div>`; return; }
+    if (String(o.id) === String(N.id)) { m.innerHTML = `<div class="err">Essa é a mesma nota que já está aberta.</div>`; return; }
+    const f1 = String((N.emitente && N.emitente.nome) || N.fornecedor || "").trim(), f2 = String(o.fornecedor || (o.emitente && o.emitente.nome) || "").trim();
+    if (f1 && f2 && f1.toLowerCase() !== f2.toLowerCase() && !await pergunta(`A nota lida é de "${f2}" e esta é de "${f1}". Juntar no mesmo boleto mesmo assim?`, "Sim, juntar")) { m.innerHTML = `<div class="ic">A nota foi lida, mas não foi ligada. Ela fica na lista de notas: busque pelo número para juntar depois.</div>`; return; }
+    const r2 = await api(JB() + "/juntar", { method: "POST", body: JSON.stringify({ notaId: N.id, outraId: o.id }) });
+    if (!r2.ok) { m.innerHTML = `<div class="err">${esc(r2.j.erro || "Não consegui juntar.")}</div>`; return; }
+    aplicarNotaJunta(r2.j.nota); manterBoletos(keep); const vN = (o.totais && o.totais.vNF) || o.vNF || o.totalLido || 0, m2 = document.getElementById("juntarMsg"); if (m2) m2.innerHTML = `<div style="color:#3ce88a;font-weight:800">✅ NF ${esc(o.numero || "s/n")} · ${esc(f2)} · ${brl(vN)} lida e ligada a este boleto.</div><div class="ic" style="white-space:normal">Os produtos dessa nota entram pelo lançamento dela. Aqui ela só divide o mesmo boleto.</div>`;
+  } catch (e) { m.innerHTML = `<div class="err">Não consegui ler a foto: ${esc(e.message)}</div>`; } }
+function manterBoletos(keep) { if (keep && keep.some(d => numBol(d.valor) > 0)) { BOL = keep; BOLNOTA = N.id; renderNota(); } }
+async function juntarVarias(ids) { const keep = (BOL || []).map(d => ({ ...d })); let ult = null; for (const id of ids) { const { ok, j } = await api(JB() + "/juntar", { method: "POST", body: JSON.stringify({ notaId: N.id, outraId: id }) }); if (!ok) { avisar(j.erro || "Não consegui juntar."); break; } ult = j.nota; } if (ult) { _sugKey = ""; aplicarNotaJunta(ult); manterBoletos(keep); } }
+async function sugerirJuntas() {
+  const el = document.getElementById("juntarSug"); if (!el || !N || N.financeiroFeito || N.financeiro) return;
+  const tot = (BOL || []).reduce((s, d) => s + numBol(d.valor), 0), js = N.notasJuntas || [], soma = (Number((N.totais || {}).vNF) || 0) + js.reduce((s, x) => s + (Number(x.vNF) || 0), 0), alvo = Math.round((tot - soma) * 100) / 100;
+  if (!(tot > 0) || alvo <= 0.05) { el.innerHTML = ""; _sugKey = ""; return; }
+  const k = N.id + "|" + alvo + "|" + js.length; if (k === _sugKey && el.innerHTML) return; _sugKey = k;
+  const { ok, j } = await api(JB() + "/sugerir-juntas?notaId=" + encodeURIComponent(N.id) + "&alvo=" + alvo), e2 = document.getElementById("juntarSug"); if (!e2) return; if (!ok) { e2.innerHTML = ""; return; }
+  let h = `<div style="border:1px solid #7a5c10;background:#2a2108;border-radius:10px;padding:8px;font-size:13px;line-height:1.5;white-space:normal"><b>💡 O boleto está ${brl(alvo)} acima da soma das notas.</b> O fornecedor pode ter juntado mais de um pedido num boleto só.`;
+  (j.combinacoes || []).forEach(c => { h += `<div style="margin-top:6px">Estas notas do mesmo fornecedor fecham a conta: <b>${c.itens.map(x => "NF " + esc(x.numero || "s/n") + " (" + brl(x.vNF) + ")").join(" + ")}</b> = ${brl(c.total)}<br><button class="btn btn-mag" style='padding:5px 10px;margin-top:4px' onclick='juntarVarias(${JSON.stringify(c.notas)})'>Juntar ${c.notas.length > 1 ? "as " + c.notas.length + " notas" : "esta nota"}</button></div>`; });
+  if (!(j.combinacoes || []).length) { if ((j.candidatas || []).length) h += `<div style="margin-top:6px">Nenhuma combinação fecha o valor exato. Outras notas deste fornecedor ainda sem boleto:</div>` + j.candidatas.slice(0, 5).map(x => `<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-top:4px"><span>NF ${esc(x.numero || "s/n")} · ${brl(x.vNF)} · ${dataJ(x.emissao)}</span><button class="btn btn-ghost" style="padding:3px 8px" onclick="juntarVarias(['${esc(x.id)}'])">Juntar</button></div>`).join("") + `<div style="margin-top:6px">Se a nota que falta ainda não foi lida, toque em <b>Ler outra nota por foto</b>.</div>`; else h += `<div style="margin-top:6px">Não achei outra nota deste fornecedor sem boleto. Se a nota que falta ainda não foi lida, toque em <b>Ler outra nota por foto</b>.</div>`; }
+  e2.innerHTML = h + "</div>"; }
 function abrirJuntar() { JUNTAR_ABERTO = true; const b = document.getElementById("juntarBox"); if (b) b.style.display = ""; buscarJuntar(); const q = document.getElementById("juntarQ"); if (q) q.focus(); }
 function buscarJuntar() { clearTimeout(_tJ); _tJ = setTimeout(async () => {
   const q = (document.getElementById("juntarQ") || {}).value || "", { ok, j } = await api(JB() + "/buscar-notas?notaId=" + encodeURIComponent(N.id) + "&q=" + encodeURIComponent(q.trim())), el = document.getElementById("juntarRes"); if (!el) return;
@@ -389,7 +420,7 @@ function bolData(i, t) { const iso = brParaISO(t); const el = document.getElemen
 function somaTxtBol() { const t = (BOL || []).reduce((s, d) => s + numBol(d.valor), 0), js = (N && N.notasJuntas) || []; let r = "Total dos boletos: " + brl(t);
   if (js.length) { const sn = (Number((N.totais || {}).vNF) || 0) + js.reduce((s, x) => s + (Number(x.vNF) || 0), 0), dif = Math.round((t - sn) * 100) / 100; r += " · soma das " + (js.length + 1) + " notas: " + brl(sn) + (Math.abs(dif) > 0.05 ? " · ⚠️ diferença de " + brl(Math.abs(dif)) + (dif > 0 ? " a mais no boleto" : " a menos no boleto") : " · ✅ confere"); }
   return r; }
-function somaBol() { const el = document.getElementById("bolSoma"); if (el) el.textContent = somaTxtBol(); }
+function somaBol() { const el = document.getElementById("bolSoma"); if (el) el.textContent = somaTxtBol(); clearTimeout(_tSug); _tSug = setTimeout(sugerirJuntas, 600); }
 function addBol() { const ult = (BOL || [])[BOL.length - 1]; let venc = ""; if (ult && ult.vencimento) { const d = new Date(ult.vencimento + "T12:00:00Z"); d.setUTCMonth(d.getUTCMonth() + 1); venc = d.toISOString().slice(0, 10); } BOL.push({ vencimento: venc, valor: "" }); renderNota(); }
 function rmBol(i) { BOL.splice(i, 1); renderNota(); }
 async function lancarSoBoletos() {
