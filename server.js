@@ -3758,6 +3758,7 @@ function _movRegistrar(m){ _movCarregar(); const id=String(m.produtoId); let nom
   if(delta==null&&depois!=null&&antes!=null) delta=+(depois-antes).toFixed(4); if(depois==null&&delta!=null&&antes!=null) depois=+(antes+delta).toFixed(4);
   const r={seq:++_movSeq,id:"mv"+Date.now().toString(36)+_movSeq.toString(36),em:m.em||Date.now(),produtoId:id,nome:String(nome||"").slice(0,120),tipo:m.tipo,delta,antes,depois,
     por:String(m.por||"").slice(0,60),motivo:String(m.motivo||"").slice(0,220),origem:String(m.origem||"").slice(0,60),ref:m.ref||null};
+  if(r.ref&&r.ref.pedidoId){ try{ r.ctx=m.ctx||_ctxMovimento(r.ref.pedidoId,id); }catch(e){} }
   _movs.push(r); _ultimoMovEm[id]=r.em; try{ fs.appendFileSync(ESTOQUE_MOV_FILE,JSON.stringify(r)+"\n"); }catch(e){ console.error("[estoque] não gravou o histórico:",e.message); }
   if(depois!=null) _saldoVivo[id]=depois; return r; }
 // pedidos que mudaram de situação há pouco: candidatos a explicar uma baixa (venda) ou uma devolução (cancelamento) de estoque
@@ -7161,7 +7162,7 @@ app.post("/api/pedidos/:id/editar-itens",async(req,res)=>{
       if(achouP){ salvarPropostas(props); sincronizado.proposta=true; }
     }catch(e){}
     // 3) histórico do pedido (aparece na Central e na conferência)
-    if(diffEd.mudou) registrarHistoricoItens(String(id), diffEd, null, funcionarioNome||"—", null);
+    if(diffEd.mudou) registrarHistoricoItens(String(id), diffEd, null, funcionarioNome||"—", null, "Tela Pedidos (editar itens)");
     // 4) PAGAMENTO JÁ RECEBIDO x novo total. Editar itens muda o total, mas o que o
     // cliente já pagou continua o mesmo. Sem esse cuidado o pedido seguia "pago" com
     // valor diferente e ninguém percebia. Se passou a faltar, o pedido volta a
@@ -8090,7 +8091,7 @@ app.post("/api/caixa-atacado/editar-pagamento",async(req,res)=>{
       }
       estornoResp={devido:sobraEstorno,recebidoLiquido:rec.liquido,novoTotal:valorPedidoNovo,registrados,pendente:restante>0.05?restante:0,falhas};
     }
-    if(itensMudaramEd) registrarHistoricoItens(idStr, diffItensEd, funcionarioId, alteracao.por, auth.funcionario.nome);
+    if(itensMudaramEd) registrarHistoricoItens(idStr, diffItensEd, funcionarioId, alteracao.por, auth.funcionario.nome, "Caixa Atacado (pedido reaberto)");
 
     // se o pedido NÃO estava em nenhum caixa do sistema, entra no caixa (aberto) de quem
     // está finalizando agora — e avisa isso ao salvar.
@@ -9428,8 +9429,8 @@ function blocoHistoricoItens(diff, quem, autorizadoPor){
   ].join("\n");
 }
 // grava o histórico de itens no log do pedido (Central e Gestão de Caixas leem daqui)
-function registrarHistoricoItens(pedidoId, diff, funcionarioId, funcNome, autorizadoPor){
-  try{
+function registrarHistoricoItens(pedidoId, diff, funcionarioId, funcNome, autorizadoPor, origem){
+ try{ _registrarAcompanhamento(pedidoId,diff,funcNome,autorizadoPor,origem||"");
     _retiradosCache.t=0; // a lista de retirados da tela de Pedidos precisa enxergar esta edição já
     const id=String(pedidoId);
     addLog(id,"itens_alterados_caixa",funcionarioId,funcNome,{autorizadoPor:autorizadoPor||"",de:diff.de,para:diff.para,
@@ -9721,7 +9722,7 @@ async function sincronizarFinalizacaoComBling(pedidoId, dados, ctx){
       if(!rt?.ok) avisoBling=(avisoBling?avisoBling+" ":"")+"A taxa do cartão não foi gravada no Bling ("+(rt?.erro||"erro")+").";
     }
     syncAtacadoEtapa(pedidoId,"salvando_itens_pagamento","ok");
-    if(itensMudaram) registrarHistoricoItens(chave, diff, null, funcionarioNome, null);
+    if(itensMudaram) registrarHistoricoItens(chave, diff, null, funcionarioNome, null, "Atualização do pedido");
 
     syncAtacadoEtapa(pedidoId,"mudando_situacao","rodando");
     const eraPrazo = Number(sitInicial)===SIT.PRAZO;
@@ -13616,6 +13617,44 @@ app.post("/api/custos/ficha/:fid",requireAcesso("acesso_custos"),(req,res)=>{
     salvarJSON(CUSTOS_FICHAS_FILE,fichas); addLog("funcionario-"+f.id,"ficha_de_custo",req.sessao?.funcionarioId||"",quem,{funcionario:f.nome,custoMensal:_round2(valores.salario+valores.encargos+valores.beneficios+valores.provisao)});
     res.json({ok:true,valores,custoMensal:_round2(valores.salario+valores.encargos+valores.beneficios+valores.provisao),ficha:fichas[f.id]});
   }catch(e){ res.status(500).json({erro:e.message}); } });
+// ===================== ACOMPANHAMENTO DOS PRODUTOS NOS PEDIDOS =====================
+// 1) Cada movimento de estoque ligado a um pedido mostra o preço pelo qual foi vendido, quem criou o pedido, o vendedor, o cliente e o caixa por onde passou.
+// 2) Cada produto retirado, reduzido, aumentado ou acrescentado num pedido vira um registro próprio (itens_acompanhamento.jsonl), com quem alterou, quem autorizou e o caixa.
+const ITENS_ACOMP_FILE=`${DATA_DIR}/itens_acompanhamento.jsonl`;
+let _cxMapa={em:0,mt:0,map:{}};
+function _mapaCaixaPorPedido(){ let mt=0; try{ mt=fs.statSync(CAIXA_SESSOES_FILE).mtimeMs; }catch(e){} if(_cxMapa.mt===mt&&Date.now()-_cxMapa.em<20000) return _cxMapa.map; const map={};
+  try{ (lerCaixaSessoes().sessoes||[]).forEach(sx=>(sx.movimentos||[]).forEach(m=>{ if(m&&m.tipo==="venda"&&!m.cancelado&&m.pedidoId) map[String(m.pedidoId)]={sessaoId:sx.id,tipoCaixa:sx.tipoCaixa||"frente",operador:m.operador||sx.operador||"",abertaEm:sx.abertaEm||null,clienteNome:m.clienteNome||"",em:m.em||null,itens:m.itens||[]}; })); }catch(e){}
+  _cxMapa={em:Date.now(),mt,map}; return map; }
+// quem criou o pedido, vendedor, cliente e caixa (mesma fonte da ficha do pedido)
+function _origemDoPedido(id){ id=String(id); const out={numero:null,cliente:"",criadoPor:"",criadoEm:null,vendedor:"",origem:"",caixa:null};
+  try{ const p=Object.values(lerPropostas()||{}).find(x=>x&&String(x.pedidoBlingId)===id), evs=(lerLog()[id])||[], criado=evs.find(e=>/^pedido_criado/.test(e.evento||"")), M=_mapaCaixaPorPedido()[id];
+    out.numero=(lerHistPedidos().porId[id]||{}).n||(M?null:null); out.cliente=(p&&p.cliente&&p.cliente.nome)||(M&&M.clienteNome)||""; out.vendedor=(p&&p.vendedorNome)||"";
+    out.criadoPor=(criado&&criado.funcionarioNome)||(M&&!p?M.operador:"")||""; out.criadoEm=(criado&&criado.em)||(p&&p.criadoEm)||(M&&M.em)||null;
+    out.origem=(p&&p.origem)||(M?(M.tipoCaixa==="atacado"?"venda direto no Caixa Atacado":"venda direto na Frente de Caixa"):"");
+    if(M) out.caixa={sessaoId:M.sessaoId,tipo:M.tipoCaixa==="atacado"?"Caixa Atacado":"Frente de Caixa",operador:M.operador,abertaEm:M.abertaEm}; }catch(e){} return out; }
+function _precoVendaNoPedido(pedidoId,produtoId){ try{ let base=_itensDoPedido(String(pedidoId)); if(!base.length){ const M=_mapaCaixaPorPedido()[String(pedidoId)]; if(M&&M.itens&&M.itens.length) base=M.itens.map(i=>({produtoId:i.produtoId,quantidade:Number(i.quantidade)||0,valor:Number(i.valor)||0})); } const L=base.filter(i=>String(i.produtoId)===String(produtoId)); const q=L.reduce((a,i)=>a+i.quantidade,0), t=L.reduce((a,i)=>a+i.quantidade*i.valor,0); return q>0?{preco:_round2(t/q),quantidade:_round2(q)}:null; }catch(e){ return null; } }
+function _ctxMovimento(pedidoId,produtoId){ const o=_origemDoPedido(pedidoId), p=_precoVendaNoPedido(pedidoId,produtoId);
+  return {precoVenda:p?p.preco:null,quantidadeNoPedido:p?p.quantidade:null,criadoPor:o.criadoPor||"",vendedor:o.vendedor||"",cliente:o.cliente||"",caixa:o.caixa?`${o.caixa.tipo} · ${o.caixa.operador||"—"}`:"",origem:o.origem||""}; }
+function _registrarAcompanhamento(pedidoId,diff,por,autorizadoPor,origem){ try{ const id=String(pedidoId), o=_origemDoPedido(id), L=[];
+  const base={em:Date.now(),pedidoId:id,numero:o.numero,cliente:o.cliente,por:String(por||"").slice(0,60),autorizadoPor:String(autorizadoPor||"").slice(0,60),criadoPor:o.criadoPor,vendedor:o.vendedor,caixa:o.caixa?`${o.caixa.tipo} · ${o.caixa.operador||"—"}`:"",origem:String(origem||"").slice(0,60)};
+  const add=(tipo,it,qa,qd,va,vd)=>{ const dq=+(qd-qa).toFixed(4); L.push({...base,produtoId:String(it.produtoId||""),nome:String(it.nome||"").slice(0,100),tipo,qtdAntes:qa,qtdDepois:qd,deltaQtd:dq,valorAntes:_round2(va),valorDepois:_round2(vd),valorMovimentado:_round2(Math.abs(dq)*(dq>=0?vd:va))}); };
+  (diff.retirados||[]).forEach(i=>add("retirado",i,i.quantidade,0,i.valor,i.valor)); (diff.acrescentados||[]).forEach(i=>add("acrescentado",i,0,i.quantidade,i.valor,i.valor));
+  (diff.alterados||[]).forEach(a=>{ const qa=a.de.quantidade, qd=a.para.quantidade, va=a.de.valor, vd=a.para.valor; if(qd<qa-0.0001) add("reduzido",a,qa,qd,va,vd); else if(qd>qa+0.0001) add("aumentado",a,qa,qd,va,vd); else if(Math.abs(va-vd)>0.004) add("preco",a,qa,qd,va,vd); });
+  if(L.length) fs.appendFileSync(ITENS_ACOMP_FILE,L.map(x=>JSON.stringify(x)).join("\n")+"\n"); }catch(e){ console.error("[acompanhamento]",e.message); } }
+function _lerAcompanhamento(){ try{ return fs.readFileSync(ITENS_ACOMP_FILE,"utf8").split("\n").filter(Boolean).map(l=>{ try{ return JSON.parse(l); }catch(e){ return null; } }).filter(Boolean); }catch(e){ return []; } }
+function _filtrarAcomp(q){ const dias=Math.min(730,Math.max(1,Number(q.dias)||30)), desde=Date.now()-dias*86400000, toks=_promoNrm(q.busca||"").split(" ").filter(Boolean), tipos=String(q.tipo||"").split(",").filter(Boolean), por=_promoNrm(q.por||"");
+  return _lerAcompanhamento().filter(r=>r.em>=desde&&(!q.produtoId||String(r.produtoId)===String(q.produtoId))&&(!tipos.length||tipos.includes(r.tipo))&&(!por||_promoNrm(`${r.por} ${r.autorizadoPor} ${r.criadoPor} ${r.vendedor}`).includes(por))&&(!toks.length||toks.every(w=>_promoNrm(`${r.nome} ${r.numero||""} ${r.pedidoId} ${r.cliente} ${r.caixa}`).includes(w)))).sort((a,b)=>b.em-a.em); }
+const _TIPOS_ACOMP={retirado:"Retirado do pedido",reduzido:"Quantidade reduzida",aumentado:"Quantidade aumentada",acrescentado:"Acrescentado ao pedido",preco:"Preço alterado"};
+app.get("/api/estoque-acompanhamento",requireAcesso("acesso_produtos_gestao"),(req,res)=>{ try{ const L=_filtrarAcomp(req.query), P={}, T={saiu:{ocorrencias:0,quantidade:0,valor:0},entrou:{ocorrencias:0,quantidade:0,valor:0}};
+  L.forEach(r=>{ const k=r.produtoId||r.nome, x=(P[k]||(P[k]={produtoId:r.produtoId,nome:r.nome,saiuQtd:0,saiuValor:0,entrouQtd:0,entrouValor:0,ocorrencias:0,pedidos:new Set()})); x.ocorrencias++; x.pedidos.add(r.pedidoId);
+    if(r.deltaQtd<0){ x.saiuQtd+=-r.deltaQtd; x.saiuValor+=r.valorMovimentado; T.saiu.ocorrencias++; T.saiu.quantidade+=-r.deltaQtd; T.saiu.valor+=r.valorMovimentado; } else if(r.deltaQtd>0){ x.entrouQtd+=r.deltaQtd; x.entrouValor+=r.valorMovimentado; T.entrou.ocorrencias++; T.entrou.quantidade+=r.deltaQtd; T.entrou.valor+=r.valorMovimentado; } });
+  const resumo=Object.values(P).map(x=>({produtoId:x.produtoId,nome:x.nome,saiuQtd:_round2(x.saiuQtd),saiuValor:_round2(x.saiuValor),entrouQtd:_round2(x.entrouQtd),entrouValor:_round2(x.entrouValor),ocorrencias:x.ocorrencias,pedidos:x.pedidos.size})).sort((a,b)=>(b.saiuValor+b.entrouValor)-(a.saiuValor+a.entrouValor)).slice(0,80);
+  Object.values(T).forEach(t=>{ t.quantidade=_round2(t.quantidade); t.valor=_round2(t.valor); });
+  res.json({ok:true,total:L.length,totais:T,tipos:_TIPOS_ACOMP,resumoPorProduto:resumo,itens:L.slice(0,Math.min(500,Math.max(1,Number(req.query.limite)||200))).map(r=>({...r,tipoNome:_TIPOS_ACOMP[r.tipo]||r.tipo}))}); }catch(e){ res.status(500).json({erro:e.message}); } });
+app.get("/api/estoque-acompanhamento.csv",requireAcesso("acesso_produtos_gestao"),(req,res)=>{ try{ const L=_filtrarAcomp(req.query).slice(0,20000), q=x=>`"${String(x==null?"":x).replace(/"/g,'""')}"`, n=x=>x==null?"":String(Number(x).toFixed(2)).replace(".",",");
+  const linhas=[["Data","Hora","Produto","Tipo","Qtd antes","Qtd depois","Diferença","Preço antes","Preço depois","Valor movimentado","Pedido","Cliente","Quem alterou","Autorizado por","Pedido criado por","Vendedor","Caixa","Origem"].join(";")];
+  L.forEach(r=>{ const d=new Date(r.em-3*3600e3).toISOString(); linhas.push([d.slice(0,10).split("-").reverse().join("/"),d.slice(11,19),q(r.nome),q(_TIPOS_ACOMP[r.tipo]||r.tipo),n(r.qtdAntes),n(r.qtdDepois),n(r.deltaQtd),n(r.valorAntes),n(r.valorDepois),n(r.valorMovimentado),q(r.numero||r.pedidoId),q(r.cliente),q(r.por),q(r.autorizadoPor),q(r.criadoPor),q(r.vendedor),q(r.caixa),q(r.origem)].join(";")); });
+  res.set("Content-Type","text/csv; charset=utf-8"); res.set("Content-Disposition",'attachment; filename="acompanhamento_itens_pedidos.csv"'); res.send("\ufeff"+linhas.join("\r\n")); }catch(e){ res.status(500).send(e.message); } });
 // ===================== CUSTO NA DATA DA VENDA =====================
 // Cada vez que o custo de um produto muda no cadastro (sincronização com o Bling, aviso do Bling, ajuste manual ou entrada de estoque), a mudança é registrada com a data.
 // O relatório de margem usa, para cada venda, o custo que valia NO DIA dela; o que for anterior ao início deste histórico continua com o custo mais antigo conhecido.
@@ -14189,12 +14228,12 @@ function _filtrarMov(q){ _movCarregar();
 app.get("/api/estoque-historico",requireAcesso("acesso_produtos_gestao"),(req,res)=>{
   try{ const L=_filtrarMov(req.query), lim=Math.min(Math.max(Number(req.query.limite)||100,1),500), off=Math.max(Number(req.query.offset)||0,0), porTipo={};
     L.forEach(m=>{ const t=(porTipo[m.tipo]||={tipo:m.tipo,nome:_TIPOS_MOV[m.tipo]||m.tipo,movimentos:0,soma:0}); t.movimentos++; t.soma=+(t.soma+(Number(m.delta)||0)).toFixed(4); });
-    res.json({ok:true,total:L.length,itens:L.slice(off,off+lim).map(m=>({...m,tipoNome:_TIPOS_MOV[m.tipo]||m.tipo})),resumo:Object.values(porTipo),tipos:_TIPOS_MOV});
+    const _cc={}; res.json({ok:true,total:L.length,itens:L.slice(off,off+lim).map(m=>({...m,ctx:m.ctx||(m.ref&&m.ref.pedidoId?(_cc[m.ref.pedidoId+"|"+m.produtoId]||(_cc[m.ref.pedidoId+"|"+m.produtoId]=_ctxMovimento(m.ref.pedidoId,m.produtoId))):null),tipoNome:_TIPOS_MOV[m.tipo]||m.tipo})),resumo:Object.values(porTipo),tipos:_TIPOS_MOV});
   }catch(e){ res.status(500).json({erro:e.message}); } });
 app.get("/api/estoque-historico.csv",requireAcesso("acesso_produtos_gestao"),(req,res)=>{
   try{ const L=_filtrarMov(req.query).slice(0,20000), q=x=>`"${String(x==null?"":x).replace(/"/g,'""')}"`, n=x=>x==null?"":String(x).replace(".",",");
-    const linhas=[["Data","Hora","Produto","Tipo","Quantidade","Saldo antes","Saldo depois","Quem","Motivo","Referência","Origem"].join(";")];
-    L.forEach(m=>{ const d=new Date(m.em-3*3600e3).toISOString(); linhas.push([d.slice(0,10).split("-").reverse().join("/"),d.slice(11,19),q(m.nome),q(_TIPOS_MOV[m.tipo]||m.tipo),n(m.delta),n(m.antes),n(m.depois),q(m.por),q(m.motivo),q(m.ref?(m.ref.numero?"Pedido "+m.ref.numero:(m.ref.nota?"NF "+m.ref.nota:"")):""),q(m.origem)].join(";")); });
+    const _cc={}, linhas=[["Data","Hora","Produto","Tipo","Quantidade","Saldo antes","Saldo depois","Quem","Motivo","Referência","Origem","Preço de venda","Pedido criado por","Vendedor","Caixa","Cliente"].join(";")];
+    L.forEach(m=>{ const d=new Date(m.em-3*3600e3).toISOString(); linhas.push([d.slice(0,10).split("-").reverse().join("/"),d.slice(11,19),q(m.nome),q(_TIPOS_MOV[m.tipo]||m.tipo),n(m.delta),n(m.antes),n(m.depois),q(m.por),q(m.motivo),q(m.ref?(m.ref.numero?"Pedido "+m.ref.numero:(m.ref.nota?"NF "+m.ref.nota:"")):""),q(m.origem)].concat((()=>{ const c=m.ctx||(m.ref&&m.ref.pedidoId?(_cc[m.ref.pedidoId+"|"+m.produtoId]||(_cc[m.ref.pedidoId+"|"+m.produtoId]=_ctxMovimento(m.ref.pedidoId,m.produtoId))):{}); return [n(c.precoVenda),q(c.criadoPor),q(c.vendedor),q(c.caixa),q(c.cliente)]; })()).join(";")); });
     res.set("Content-Type","text/csv; charset=utf-8"); res.set("Content-Disposition",'attachment; filename="historico_estoque.csv"'); res.send("\ufeff"+linhas.join("\r\n"));
   }catch(e){ res.status(500).json({erro:e.message}); } });
 // lê o estoque de todos os produtos no Bling agora e registra o que mudou e o sistema ainda não sabia
