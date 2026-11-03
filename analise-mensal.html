@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>B13 — Análise do mês</title>
+<style>
+*{box-sizing:border-box;font-family:Arial,Helvetica,sans-serif;margin:0;padding:0}
+:root{--mag:#FF0082;--bg:#0f0d24;--card:#151233;--borda:#2c2660;--muted:#9a95c9;--ok:#3ce88a;--warn:#ffd23f;--ruim:#ff8aa3}
+body{background:var(--bg);color:#fff;min-height:100vh}
+.top{background:linear-gradient(180deg,#2b2870,#262366);border-bottom:3px solid var(--mag);padding:10px 16px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.top img{height:34px}.top .t{font-weight:900;font-size:16px}.top .sp{flex:1}
+.btn{border:none;border-radius:9px;font-weight:800;cursor:pointer;font-size:12.5px;padding:9px 13px;color:#fff;background:var(--mag)}.btn-ghost{background:#1c1846;border:1px solid #3a3480}
+.wrap{padding:14px;display:grid;gap:12px;max-width:1000px;margin:0 auto}
+.card{background:var(--card);border:1px solid var(--borda);border-radius:12px;padding:13px;min-width:0}
+.card h3{font-size:15px;margin-bottom:8px}
+.muted{color:var(--muted);font-size:12px;line-height:1.45}
+input[type=month]{background:#0d0b22;border:1px solid #3a3480;border-radius:9px;padding:9px;color:#fff;font-size:14px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.kpi{background:#120f2c;border:1px solid var(--borda);border-radius:12px;padding:11px}.kpi .v{font-size:19px;font-weight:900}.kpi .l{font-size:10.5px;color:var(--muted);font-weight:700;text-transform:uppercase;margin-top:3px}.kpi .d{font-size:12px;margin-top:3px;font-weight:800}
+.up{color:var(--ok)}.dn{color:var(--ruim)}.nt{color:var(--muted)}
+.ins{padding:7px 0;border-top:1px solid #1d1946;font-size:13.5px;line-height:1.5}.ins:first-of-type{border-top:none}
+table{width:100%;border-collapse:collapse;font-size:12.5px}th{text-align:left;color:var(--muted);font-size:10.5px;text-transform:uppercase;padding:5px 4px;border-bottom:1px solid var(--borda)}td{padding:6px 4px;border-bottom:1px solid #1d1946;vertical-align:top}td.n,th.n{text-align:right;white-space:nowrap}
+.scroll{overflow-x:auto}
+.sec-t{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px}.sec-t b{flex:1;font-size:15px}
+.spin{display:inline-block;width:16px;height:16px;border:3px solid #514c96;border-top-color:var(--mag);border-radius:50%;animation:spin .8s linear infinite;vertical-align:middle}@keyframes spin{to{transform:rotate(360deg)}}
+.tag{display:inline-block;font-size:10.5px;font-weight:800;padding:2px 7px;border-radius:6px;background:#2a2060;color:#c9b8ff}
+</style>
+<script src="/nav.js"></script>
+</head>
+<body><script>
+  (function(){ if(!b13RequireLogin()) return; if(!b13BloquearSeSemAcesso("/analise-mensal")) return;
+    document.addEventListener("DOMContentLoaded",function(){ const nav=document.createElement("div"); nav.innerHTML=b13RenderNav("/analise-mensal"); document.body.insertBefore(nav,document.body.firstChild); }); })();
+</script>
+<div class="top"><img src="/logo"><div class="t">📊 Análise do mês</div><div class="sp"></div>
+  <input type="month" id="mes"><button class="btn" onclick="gerar()">Gerar análise</button><button class="btn btn-ghost" onclick="baixarCsv()">⬇️ CSV completo</button></div>
+<div class="wrap" id="corpo"><div class="card muted">Escolha o mês e toque em <b>Gerar análise</b>. O mês passado já vem selecionado. A análise junta vendas, margem, produtos, clientes, despesas, vendas abaixo do custo, retiradas em pedidos e aumentos de custo, sempre comparando com o mês anterior.</div></div>
+<script>
+const B = location.protocol.indexOf("http") === 0 ? "" : "https://app.b13bebidas.com.br";
+const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+function token() { try { return (b13GetSession() || {}).token || ""; } catch (e) { return ""; } }
+async function api(p) { try { const r = await fetch(B + p, { headers: { "X-Auth-Token": token() } }); const j = await r.json().catch(() => ({})); return r.ok ? j : { erro: j.erro || ("erro " + r.status) }; } catch (e) { return { erro: e.message }; } }
+const brl = n => n == null || isNaN(n) ? "—" : "R$ " + Number(n).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const num = n => n == null || isNaN(n) ? "—" : Number(n).toLocaleString("pt-BR", { maximumFractionDigits: 1 });
+const pctTxt = v => v == null || !isFinite(v) ? "—" : (v > 0 ? "+" : "") + v.toFixed(1).replace(".", ",") + "%";
+const pp = v => v == null || !isFinite(v) ? "—" : (v > 0 ? "+" : "") + v.toFixed(1).replace(".", ",") + " p.p.";
+const delta = (a, b) => b > 0 ? (a - b) / b * 100 : null;
+const NOMEMES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"], DSEM = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
+const rotMes = m => NOMEMES[+m.slice(5) - 1] + " de " + m.slice(0, 4);
+const hojeBR = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
+function antes(m) { let [y, mo] = m.split("-").map(Number); mo--; if (mo === 0) { mo = 12; y--; } return y + "-" + String(mo).padStart(2, "0"); }
+function periodo(m) { const [y, mo] = m.split("-").map(Number), u = new Date(Date.UTC(y, mo, 0)).getUTCDate(); return { ini: m + "-01", fim: m + "-" + String(u).padStart(2, "0") }; }
+const dmy = d => d ? d.split("-").reverse().join("/") : "";
+const seta = (v, inverso) => v == null ? `<span class="nt">sem base de comparação</span>` : `<span class="${(inverso ? v < 0 : v > 0) ? "up" : (v === 0 ? "nt" : "dn")}">${v > 0 ? "▲" : v < 0 ? "▼" : "="} ${pctTxt(v)}</span>`;
+document.getElementById("mes").value = (() => { const h = hojeBR().slice(0, 7); return antes(h); })();
+let D = null;
+const dados = r => r && !r.erro ? r : null;
+async function gerar() {
+  const m = document.getElementById("mes").value; if (!/^\d{4}-\d{2}$/.test(m)) { alert("Escolha o mês."); return; }
+  const an = antes(m), P = periodo(m), PA = periodo(an), diasDesde = Math.min(700, Math.ceil((Date.now() - Date.parse(P.ini + "T00:00:00-03:00")) / 86400000) + 3);
+  document.getElementById("corpo").innerHTML = `<div class="card"><span class="spin"></span> Reunindo os dados de ${rotMes(m)}… isso pode levar alguns segundos.</div>`;
+  const q = (mm, ag) => api(`/api/margem-bruta?ini=${periodo(mm).ini}&fim=${periodo(mm).fim}&agrupar=${ag}`);
+  const [mp, md, ap, ad, cp, cpa, ab, ac, ce] = await Promise.all([q(m, "produto"), q(m, "dia"), q(an, "produto"), q(an, "dia"), api(`/api/contas-pagar/lancamentos?mes=${m}&base=competencia&max=3000`), api(`/api/contas-pagar/lancamentos?mes=${an}&base=competencia&max=3000`),
+    api(`/api/vendas-abaixo-custo?ini=${P.ini}&fim=${P.fim}&status=todos`), api(`/api/estoque-acompanhamento?ini=${P.ini}&fim=${P.fim}&limite=500`), api(`/api/custos-entradas?dias=${diasDesde}&so=aumentos`)]);
+  D = { m, an, P, PA, mp, md, ap, ad, cp, cpa, ab, ac, ce };
+  render();
+}
+// ---------- cálculos
+function resumo(mp) { if (!dados(mp)) return null; const t = mp.totais || {}, f = mp.faturamento || {}, fat = Number(f.total) || 0, ped = Number(f.pedidos) || 0; return { fat, ped, ticket: ped ? fat / ped : null, lucro: Number(t.lucro) || 0, margem: t.margem, lucroLiq: Number(t.lucroLiq) || 0, margemLiq: t.margemLiq, custo: Number(t.custo) || 0, taxa: Number(t.taxa) || 0, cobertura: t.coberturaPct, semCusto: Number(f.semCusto) || 0, qtd: f.qtd }; }
+function despesas(cp) { if (!dados(cp)) return null; const grupos = {}; (cp.grupos || []).forEach(g => grupos[g.id] = g); const por = {}; let total = 0, fora = 0, pago = 0, aberto = 0;
+  (cp.itens || []).forEach(t => { if (t.status === "cancelado") return; const v = Number(t.valorMes != null ? t.valorMes : t.valor) || 0, g = grupos[t.grupo] || { id: t.grupo, nome: t.grupo || "Outros", fora: false }; if (g.fora) { fora += v; return; } total += v; (por[g.id] || (por[g.id] = { nome: g.nome, icone: g.icone || "", v: 0, q: 0 })); por[g.id].v += v; por[g.id].q++; if (t.status === "pago") pago += v; else aberto += v; });
+  return { total, fora, pago, aberto, grupos: Object.values(por).sort((a, b) => b.v - a.v) }; }
+function porDia(md) { if (!dados(md)) return []; return (md.linhas || []).map(l => ({ dia: l.chave, fat: (Number(l.fatCusto) || 0) + (Number(l.fatSemCusto) || 0), lucro: Number(l.lucro) || 0, pedidos: Number(l.pedidos) || 0 })).sort((a, b) => a.dia.localeCompare(b.dia)); }
+function porSemana(dias) { const S = DSEM.map(n => ({ nome: n, fat: 0, dias: 0, pedidos: 0 })); dias.forEach(d => { const w = new Date(d.dia + "T12:00:00Z").getUTCDay(); S[w].fat += d.fat; S[w].dias++; S[w].pedidos += d.pedidos; }); return S.filter(x => x.dias).map(x => ({ ...x, media: x.fat / x.dias })).sort((a, b) => b.media - a.media); }
+const chaveCli = c => c.clienteId ? "I:" + c.clienteId : "N:" + String(c.nome || "").toLowerCase();
+function clientes(mp, ap) { const A = {}; ((dados(ap) && ap.clientes) || []).forEach(c => A[chaveCli(c)] = c); const M = {}; const lista = ((dados(mp) && mp.clientes) || []).map(c => { M[chaveCli(c)] = c; const a = A[chaveCli(c)]; return { ...c, antes: a ? Number(a.fat) || 0 : 0, novo: !a }; }).sort((a, b) => b.fat - a.fat);
+  const sumiram = Object.keys(A).filter(k => !M[k]).map(k => A[k]).sort((a, b) => b.fat - a.fat); return { lista, sumiram, total: (dados(mp) && mp.clientesTotal) || lista.length }; }
+function produtos(mp, ap) { const A = {}; ((dados(ap) && ap.produtos) || []).forEach(p => A[p.produtoId != null ? p.produtoId : p.nome] = p); return ((dados(mp) && mp.produtos) || []).map(p => { const a = A[p.produtoId != null ? p.produtoId : p.nome]; return { ...p, antesFat: a ? Number(a.fat) || 0 : 0, antesQtd: a ? Number(a.qtd) || 0 : 0 }; }); }
+// ---------- destaques em texto
+function destaques(R) {
+  const o = [], r = R.r, a = R.a; if (!r) return ["Não consegui ler as vendas do mês (margem bruta). Confira a permissão de acesso."];
+  o.push(`Faturamento de <b>${brl(r.fat)}</b> em <b>${num(r.ped)}</b> pedidos, ticket médio de <b>${brl(r.ticket)}</b>.${a && a.fat ? ` Contra ${rotMes(D.an)}: ${seta(delta(r.fat, a.fat))} no faturamento (${brl(a.fat)}), ${seta(delta(r.ped, a.ped))} nos pedidos.` : " Não há vendas no mês anterior para comparar."}`);
+  o.push(`Lucro bruto de <b>${brl(r.lucro)}</b>, margem de <b>${num(r.margem)}%</b>${a && a.margem != null ? ` (${pp(r.margem - a.margem)} em relação a ${rotMes(D.an)}, que teve ${num(a.margem)}%)` : ""}. Depois das taxas de cartão e Pix, o lucro fica em ${brl(r.lucroLiq)} (${num(r.margemLiq)}%).`);
+  if (r.cobertura != null && r.cobertura < 97) o.push(`<span class="dn">Atenção aos dados:</span> só ${num(r.cobertura)}% do faturamento tem custo cadastrado, então a margem pode estar superestimada. ${brl(r.semCusto)} foram vendidos sem custo.`);
+  if (R.dias.length) { const melhor = [...R.dias].sort((x, y) => y.fat - x.fat)[0], pior = [...R.dias].filter(x => x.fat > 0).sort((x, y) => x.fat - y.fat)[0]; o.push(`Melhor dia: <b>${dmy(melhor.dia)}</b> (${brl(melhor.fat)}). Menor venda: ${pior ? dmy(pior.dia) + " (" + brl(pior.fat) + ")" : "—"}. Dia da semana mais forte, em média: <b>${R.sem[0] ? R.sem[0].nome : "—"}</b> (${R.sem[0] ? brl(R.sem[0].media) : "—"}); mais fraco: ${R.sem.length > 1 ? R.sem[R.sem.length - 1].nome + " (" + brl(R.sem[R.sem.length - 1].media) + ")" : "—"}.`); }
+  const cl = R.cli.lista; if (cl.length) { const tot = cl.reduce((x, c) => x + (Number(c.fat) || 0), 0), top5 = cl.slice(0, 5).reduce((x, c) => x + (Number(c.fat) || 0), 0); o.push(`Os <b>5 maiores clientes</b> responderam por <b>${num(tot ? top5 / tot * 100 : 0)}%</b> do faturamento (${cl.slice(0, 5).map(c => esc(c.nome || "Consumidor final")).join(", ")}).${tot && top5 / tot > 0.6 ? " <span class='dn'>Concentração alta: perder um deles pesa.</span>" : ""}`);
+    const novos = cl.filter(c => c.novo), cresc = cl.filter(c => !c.novo && c.fat > c.antes).sort((x, y) => (y.fat - y.antes) - (x.fat - x.antes))[0], caiu = cl.filter(c => !c.novo && c.fat < c.antes).sort((x, y) => (x.fat - x.antes) - (y.fat - y.antes))[0];
+    o.push(`<b>${novos.length}</b> cliente(s) sem compra em ${rotMes(D.an)} voltaram ou entraram (${brl(novos.reduce((x, c) => x + c.fat, 0))}). <b>${R.cli.sumiram.length}</b> cliente(s) que compraram em ${rotMes(D.an)} não compraram neste mês (${brl(R.cli.sumiram.reduce((x, c) => x + (Number(c.fat) || 0), 0))} no mês anterior).${cresc ? ` Maior alta: ${esc(cresc.nome)} (${brl(cresc.antes)} → ${brl(cresc.fat)}).` : ""}${caiu ? ` Maior queda: ${esc(caiu.nome)} (${brl(caiu.antes)} → ${brl(caiu.fat)}).` : ""}`); }
+  const pr = R.prod; if (pr.length) { const porFat = [...pr].sort((x, y) => y.fat - x.fat), porLucro = [...pr].sort((x, y) => y.lucro - x.lucro), totalFat = pr.reduce((x, p) => x + p.fat, 0); let acum = 0, n80 = 0; for (const p of porFat) { acum += p.fat; n80++; if (acum >= totalFat * 0.8) break; }
+    o.push(`Produto que mais faturou: <b>${esc(porFat[0].nome)}</b> (${brl(porFat[0].fat)}). Maior lucro: <b>${esc(porLucro[0].nome)}</b> (${brl(porLucro[0].lucro)}). <b>${n80}</b> de ${pr.length} produtos fizeram 80% do faturamento.`);
+    const fracos = pr.filter(p => p.margem != null && p.margem < 10 && p.fat >= totalFat * 0.01).sort((x, y) => y.fat - x.fat).slice(0, 5); if (fracos.length) o.push(`<span class="dn">Margem abaixo de 10% em produtos de volume:</span> ${fracos.map(p => `${esc(p.nome)} (${num(p.margem)}%, ${brl(p.fat)})`).join("; ")}.`);
+    const alta = [...pr].filter(p => p.antesFat > 0).sort((x, y) => (y.fat - y.antesFat) - (x.fat - x.antesFat))[0], queda = [...pr].filter(p => p.antesFat > 0).sort((x, y) => (x.fat - x.antesFat) - (y.fat - y.antesFat))[0]; if (alta && alta.fat > alta.antesFat) o.push(`Produto que mais cresceu: <b>${esc(alta.nome)}</b> (${brl(alta.antesFat)} → ${brl(alta.fat)}).${queda && queda.fat < queda.antesFat ? ` Maior queda: <b>${esc(queda.nome)}</b> (${brl(queda.antesFat)} → ${brl(queda.fat)}).` : ""}`); }
+  if (R.desp) { const res = r.lucro - R.desp.total, resA = R.despA && a ? a.lucro - R.despA.total : null; o.push(`Despesas lançadas do mês: <b>${brl(R.desp.total)}</b>${R.despA ? ` (${seta(delta(R.desp.total, R.despA.total), true)} em relação a ${rotMes(D.an)})` : ""}. <b>Resultado estimado</b> (lucro bruto menos despesas): <b class="${res >= 0 ? "up" : "dn"}">${brl(res)}</b>${resA != null ? `, contra ${brl(resA)} em ${rotMes(D.an)}` : ""}. Compras de mercadoria (${brl(R.desp.fora)}) ficam fora porque o custo já está na margem.`); }
+  if (R.ab) { if (R.ab.vendas.length) o.push(`<span class="dn">Vendas abaixo do custo:</span> <b>${R.ab.vendas.length}</b> pedido(s), prejuízo de <b>${brl(R.ab.prejuizo)}</b>, ${R.ab.abertas} ainda em aberto sem justificativa.`); else o.push("Nenhuma venda abaixo do custo foi detectada no mês."); }
+  if (R.ac && R.ac.total) { const t = R.ac.totais; o.push(`Retiradas e aumentos em pedidos: saíram <b>${num(t.saiu.quantidade)} un</b> (${brl(t.saiu.valor)}) em ${num(t.saiu.ocorrencias)} ocorrência(s); entraram ${num(t.entrou.quantidade)} un (${brl(t.entrou.valor)}). Quem mais retirou: ${(R.ac.resumoPorPessoa || []).slice(0, 3).map(x => `${esc(x.pessoa)} (${brl(x.saiuValor)})`).join(", ") || "—"}.`); }
+  if (R.ce && R.ce.length) { const top = R.ce.sort((x, y) => (y.variacaoPct || 0) - (x.variacaoPct || 0)); o.push(`<b>${R.ce.length}</b> lançamento(s) de custo com aumento no mês. Maiores altas: ${top.slice(0, 3).map(x => `${esc(x.nome)} (${pctTxt(x.variacaoPct)}, ${brl(x.anterior)} → ${brl(x.custo)})`).join("; ")}.`); }
+  return o;
+}
+function tabela(cab, linhas, vazio) { return linhas.length ? `<div class="scroll"><table><tr>${cab.map(c => `<th class="${c.n ? "n" : ""}">${c.t}</th>`).join("")}</tr>${linhas.map(l => `<tr>${l.map((v, i) => `<td class="${cab[i].n ? "n" : ""}">${v}</td>`).join("")}</tr>`).join("")}</table></div>` : `<div class="muted">${vazio || "Sem dados."}</div>`; }
+function kpi(rot, v, d) { return `<div class="kpi"><div class="v">${v}</div><div class="l">${rot}</div>${d != null ? `<div class="d">${d}</div>` : ""}</div>`; }
+function render() {
+  const r = resumo(D.mp), a = resumo(D.ap), dias = porDia(D.md), sem = porSemana(dias), cli = clientes(D.mp, D.ap), prod = produtos(D.mp, D.ap), desp = despesas(D.cp), despA = despesas(D.cpa);
+  const ab = dados(D.ab) ? (() => { const v = (D.ab.vendas || []); return { vendas: v, prejuizo: v.reduce((x, y) => x + (Number(y.prejuizo) || 0), 0), abertas: v.filter(y => !y.resolvido && !y.dispensado).length, lista: [...v].sort((x, y) => y.prejuizo - x.prejuizo).slice(0, 10) }; })() : null;
+  const ac = dados(D.ac) ? D.ac : null, ce = dados(D.ce) ? (D.ce.linhas || []).filter(x => x.dia >= D.P.ini && x.dia <= D.P.fim && x.variacaoPct > 0.05) : null;
+  D.R = { r, a, dias, sem, cli, prod, desp, despA, ab, ac, ce };
+  const R = D.R, falta = (rot, x) => dados(x) ? "" : `<div class="muted" style="margin-top:6px">⚠️ ${rot}: ${esc((x && x.erro) || "indisponível")}.</div>`;
+  let h = `<div class="card"><div class="sec-t"><b>📅 ${rotMes(D.m)}</b><span class="tag">comparado com ${rotMes(D.an)}</span></div>`;
+  h += r ? `<div class="kpis">${kpi("Faturamento", brl(r.fat), seta(a ? delta(r.fat, a.fat) : null))}${kpi("Lucro bruto", brl(r.lucro), seta(a ? delta(r.lucro, a.lucro) : null))}${kpi("Margem", num(r.margem) + "%", a && a.margem != null ? `<span class="${r.margem - a.margem >= 0 ? "up" : "dn"}">${pp(r.margem - a.margem)}</span>` : null)}${kpi("Pedidos", num(r.ped), seta(a ? delta(r.ped, a.ped) : null))}${kpi("Ticket médio", brl(r.ticket), a && a.ticket ? seta(delta(r.ticket, a.ticket)) : null)}${desp ? kpi("Despesas", brl(desp.total), despA ? seta(delta(desp.total, despA.total), true) : null) : ""}${desp ? kpi("Resultado estimado", `<span class="${r.lucro - desp.total >= 0 ? "up" : "dn"}">${brl(r.lucro - desp.total)}</span>`, "lucro bruto − despesas") : ""}</div>` : `<div class="muted">Sem dados de vendas neste mês.</div>`;
+  h += falta("Vendas", D.mp) + `</div>`;
+  h += `<div class="card"><h3>💡 Destaques do mês</h3>${destaques(R).map(t => `<div class="ins">${t}</div>`).join("")}</div>`;
+  h += `<div class="card"><h3>🗓️ Vendas por dia</h3>${tabela([{ t: "Dia" }, { t: "Faturamento", n: 1 }, { t: "Pedidos", n: 1 }, { t: "Lucro bruto", n: 1 }], dias.map(d => [dmy(d.dia) + " · " + DSEM[new Date(d.dia + "T12:00:00Z").getUTCDay()].slice(0, 3), brl(d.fat), num(d.pedidos), brl(d.lucro)]), "Sem vendas por dia.")}${falta("Vendas por dia", D.md)}
+    <div class="muted" style="margin:10px 0 4px"><b>Média por dia da semana</b></div>${tabela([{ t: "Dia da semana" }, { t: "Média por dia", n: 1 }, { t: "Dias com venda", n: 1 }], sem.map(s => [s.nome, brl(s.media), num(s.dias)]))}</div>`;
+  const totFat = prod.reduce((x, p) => x + p.fat, 0);
+  h += `<div class="card"><h3>📦 Produtos</h3><div class="muted" style="margin-bottom:4px"><b>10 que mais faturaram</b></div>${tabela([{ t: "Produto" }, { t: "Qtd", n: 1 }, { t: "Faturamento", n: 1 }, { t: "% do total", n: 1 }, { t: "Margem", n: 1 }, { t: "Lucro", n: 1 }, { t: "vs mês anterior", n: 1 }], [...prod].sort((x, y) => y.fat - x.fat).slice(0, 10).map(p => [esc(p.nome), num(p.qtd), brl(p.fat), num(totFat ? p.fat / totFat * 100 : 0) + "%", num(p.margem) + "%", brl(p.lucro), p.antesFat ? pctTxt(delta(p.fat, p.antesFat)) : "novo"]))}
+    <div class="muted" style="margin:10px 0 4px"><b>Menores margens entre os 40 que mais faturaram</b></div>${tabela([{ t: "Produto" }, { t: "Preço médio", n: 1 }, { t: "Custo un.", n: 1 }, { t: "Margem", n: 1 }, { t: "Faturamento", n: 1 }], [...prod].sort((x, y) => y.fat - x.fat).slice(0, 40).filter(p => p.margem != null).sort((x, y) => x.margem - y.margem).slice(0, 8).map(p => [esc(p.nome), brl(p.precoMedio), brl(p.custoUn), `<span class="${p.margem < 10 ? "dn" : ""}">${num(p.margem)}%</span>`, brl(p.fat)]))}${falta("Produtos", D.mp)}</div>`;
+  h += `<div class="card"><h3>👥 Clientes</h3><div class="muted" style="margin-bottom:4px">${num(cli.total)} cliente(s) compraram no mês</div>${tabela([{ t: "Cliente" }, { t: "Pedidos", n: 1 }, { t: "Faturamento", n: 1 }, { t: "Margem", n: 1 }, { t: "Mês anterior", n: 1 }], cli.lista.slice(0, 12).map(c => [esc(c.nome || "Consumidor final") + (c.novo ? ' <span class="tag">novo no mês</span>' : ""), num(c.pedidos), brl(c.fat), num(c.margem) + "%", c.novo ? "—" : brl(c.antes)]))}
+    <div class="muted" style="margin:10px 0 4px"><b>Compraram em ${rotMes(D.an)} e não compraram neste mês</b></div>${tabela([{ t: "Cliente" }, { t: "Faturou no mês anterior", n: 1 }], cli.sumiram.slice(0, 10).map(c => [esc(c.nome || "—"), brl(c.fat)]), "Nenhum.")}</div>`;
+  if (desp) h += `<div class="card"><h3>💸 Despesas do mês (por competência)</h3>${tabela([{ t: "Grupo" }, { t: "Valor", n: 1 }, { t: "% do total", n: 1 }, { t: "Mês anterior", n: 1 }], desp.grupos.map(g => { const ga = despA && despA.grupos.find(x => x.nome === g.nome); return [g.icone + " " + esc(g.nome), brl(g.v), num(desp.total ? g.v / desp.total * 100 : 0) + "%", ga ? brl(ga.v) : "—"]; }))}<div class="muted" style="margin-top:6px">Pago: ${brl(desp.pago)} · em aberto: ${brl(desp.aberto)} · compras de mercadoria (fora do resultado): ${brl(desp.fora)}</div></div>`;
+  else h += `<div class="card"><h3>💸 Despesas</h3>${falta("Contas a pagar", D.cp) || '<div class="muted">Sem dados.</div>'}</div>`;
+  h += `<div class="card"><h3>⚠️ Atenção</h3>`;
+  h += `<div class="muted" style="margin-bottom:4px"><b>Vendas abaixo do custo</b>${ab ? ` · ${ab.vendas.length} pedido(s), prejuízo ${brl(ab.prejuizo)}` : ""}</div>${ab ? tabela([{ t: "Pedido" }, { t: "Canal" }, { t: "Cliente" }, { t: "Prejuízo", n: 1 }, { t: "Situação" }], ab.lista.map(v => ["#" + esc(v.numero), esc(v.canal), esc(v.cliente || "—"), brl(v.prejuizo), v.dispensado ? "dispensada" : v.resolvido ? "corrigida" : "aberta"]), "Nenhuma venda abaixo do custo.") : falta("Vendas abaixo do custo", D.ab)}`;
+  h += `<div class="muted" style="margin:12px 0 4px"><b>Retiradas e aumentos nos pedidos</b></div>${ac ? tabela([{ t: "Pessoa" }, { t: "Retirou", n: 1 }, { t: "Ocorrências", n: 1 }], (ac.resumoPorPessoa || []).slice(0, 8).map(x => [esc(x.pessoa), brl(x.saiuValor) + " (" + num(x.saiuQtd) + " un)", num(x.ocorrencias)]), "Sem retiradas registradas no mês (o acompanhamento começou há pouco).") + `<div class="muted" style="margin:8px 0 4px">Produtos mais retirados</div>` + tabela([{ t: "Produto" }, { t: "Saiu", n: 1 }, { t: "Entrou", n: 1 }, { t: "Pedidos", n: 1 }], (ac.resumoPorProduto || []).filter(x => x.saiuQtd > 0).slice(0, 8).map(x => [esc(x.nome), num(x.saiuQtd) + " un (" + brl(x.saiuValor) + ")", num(x.entrouQtd) + " un", num(x.pedidos)]), "—") : falta("Acompanhamento", D.ac)}`;
+  h += `<div class="muted" style="margin:12px 0 4px"><b>Aumentos de custo lançados no mês</b></div>${ce ? tabela([{ t: "Dia" }, { t: "Produto" }, { t: "Antes", n: 1 }, { t: "Agora", n: 1 }, { t: "Variação", n: 1 }, { t: "Fornecedor" }], [...ce].sort((x, y) => y.variacaoPct - x.variacaoPct).slice(0, 12).map(x => [dmy(x.dia), esc(x.nome), brl(x.anterior), brl(x.custo), `<span class="dn">${pctTxt(x.variacaoPct)}</span>`, esc(x.fornecedor || x.origem || "")]), "Nenhum aumento de custo registrado.") : falta("Custos", D.ce)}</div>`;
+  document.getElementById("corpo").innerHTML = h;
+}
+// ---------- CSV (blocos separados por linha em branco)
+function baixarCsv() {
+  if (!D || !D.R) { alert("Gere a análise primeiro."); return; }
+  const R = D.R, q = x => `"${String(x == null ? "" : x).replace(/"/g, '""')}"`, n = x => x == null || isNaN(x) ? "" : String(Number(x).toFixed(2)).replace(".", ","), blocos = [];
+  const bloco = (tit, cab, linhas) => blocos.push([q(tit), cab.map(q).join(";"), ...linhas.map(l => l.map(q).join(";"))].join("\r\n"));
+  const r = R.r, a = R.a; if (r) bloco("RESUMO", ["Indicador", D.m, D.an], [["Faturamento", n(r.fat), a ? n(a.fat) : ""], ["Pedidos", n(r.ped), a ? n(a.ped) : ""], ["Ticket médio", n(r.ticket), a ? n(a.ticket) : ""], ["Custo das vendas", n(r.custo), a ? n(a.custo) : ""], ["Lucro bruto", n(r.lucro), a ? n(a.lucro) : ""], ["Margem %", n(r.margem), a ? n(a.margem) : ""], ["Taxas de cartão e Pix", n(r.taxa), a ? n(a.taxa) : ""], ["Lucro depois das taxas", n(r.lucroLiq), a ? n(a.lucroLiq) : ""], ["Despesas do mês", R.desp ? n(R.desp.total) : "", R.despA ? n(R.despA.total) : ""], ["Resultado estimado", R.desp ? n(r.lucro - R.desp.total) : "", R.despA && a ? n(a.lucro - R.despA.total) : ""]]);
+  bloco("VENDAS POR DIA", ["Dia", "Faturamento", "Pedidos", "Lucro bruto"], R.dias.map(d => [d.dia, n(d.fat), n(d.pedidos), n(d.lucro)]));
+  bloco("PRODUTOS", ["Produto", "Qtd", "Faturamento", "Custo", "Lucro", "Margem %", "Preço médio", "Custo un.", "Faturamento mês anterior"], R.prod.map(p => [p.nome, n(p.qtd), n(p.fat), n(p.custo), n(p.lucro), n(p.margem), n(p.precoMedio), n(p.custoUn), n(p.antesFat)]));
+  bloco("CLIENTES", ["Cliente", "Pedidos", "Faturamento", "Lucro", "Margem %", "Faturamento mês anterior"], R.cli.lista.map(c => [c.nome || "Consumidor final", n(c.pedidos), n(c.fat), n(c.lucro), n(c.margem), n(c.antes)]));
+  bloco("CLIENTES QUE NÃO COMPRARAM NO MÊS", ["Cliente", "Faturamento no mês anterior"], R.cli.sumiram.map(c => [c.nome, n(c.fat)]));
+  if (R.desp) bloco("DESPESAS POR GRUPO", ["Grupo", "Valor"], R.desp.grupos.map(g => [g.nome, n(g.v)]));
+  if (R.ab) bloco("VENDAS ABAIXO DO CUSTO", ["Pedido", "Data", "Canal", "Cliente", "Prejuízo", "Situação"], R.ab.vendas.map(v => [v.numero, v.data, v.canal, v.cliente, n(v.prejuizo), v.dispensado ? "dispensada" : v.resolvido ? "corrigida" : "aberta"]));
+  if (R.ac) bloco("RETIRADAS E AUMENTOS POR PESSOA", ["Pessoa", "Retirou (R$)", "Retirou (un)", "Entrou (R$)", "Ocorrências"], (R.ac.resumoPorPessoa || []).map(x => [x.pessoa, n(x.saiuValor), n(x.saiuQtd), n(x.entrouValor), n(x.ocorrencias)]));
+  if (R.ce) bloco("AUMENTOS DE CUSTO", ["Dia", "Produto", "Custo anterior", "Custo", "Variação %", "Fornecedor"], R.ce.map(x => [x.dia, x.nome, n(x.anterior), n(x.custo), n(x.variacaoPct), x.fornecedor || x.origem || ""]));
+  const blob = new Blob(["\ufeff" + blocos.join("\r\n\r\n")], { type: "text/csv;charset=utf-8" }), el = document.createElement("a"); el.href = URL.createObjectURL(blob); el.download = "analise_" + D.m + ".csv"; document.body.appendChild(el); el.click(); el.remove();
+}
+{ const qm = new URLSearchParams(location.search).get("mes"); if (/^\d{4}-\d{2}$/.test(qm || "")) document.getElementById("mes").value = qm; setTimeout(gerar, 400); }
+</script>
+</body>
+</html>
