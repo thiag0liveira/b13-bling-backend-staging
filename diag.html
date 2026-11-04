@@ -11,11 +11,16 @@ a.c{display:inline-block;margin:0 6px 6px 0;padding:6px 12px;border:1px solid #3
   <div class="card"><h2>🩺 Diagnóstico</h2><div class="ic">Abre os diagnósticos do sistema com o seu login (só administrador).</div>
     <div style="margin-top:10px" id="atalhos"></div></div>
   <div class="card" id="resumo"></div>
-  <div class="card"><pre id="saida">…</pre></div>
+  <div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px"><span class="ic" id="alvoTxt"></span><button id="btnCopiar" onclick="copiarResultado()" style="background:#FF0082;border:0;border-radius:9px;color:#fff;font-weight:800;font-size:13px;padding:8px 14px;cursor:pointer">📋 Copiar resultado</button></div><pre id="saida">…</pre></div>
 </div>
 <script>
 const DIAGS = [["/api/diag/ia", "🤖 Leitura de foto (IA)"], ["/api/diag/webhooks", "🔔 Avisos do Bling"], ["/api/diag/atendidos", "✅ Atendidos (Supervisora)"], ["/api/diag/transicoes", "🔀 Fluxo de situações"], ["/api/diag/maps", "🗺️ Google Maps"], ["/api/saude/disco", "💽 Disco do servidor"]];
 const u = new URLSearchParams(location.search), alvo = u.get("api") || "/api/diag/ia";
+document.getElementById("alvoTxt").textContent = alvo;
+// copia o resultado com o endereço consultado na primeira linha, para colar numa conversa sem perder o contexto
+async function copiarResultado() { const btn = document.getElementById("btnCopiar"), txt = "Diagnóstico " + alvo + "\n" + document.getElementById("saida").textContent; let ok = false;
+  try { await navigator.clipboard.writeText(txt); ok = true; } catch (e) { try { const t = document.createElement("textarea"); t.value = txt; t.style.cssText = "position:fixed;top:0;left:0;opacity:0"; document.body.appendChild(t); t.focus(); t.select(); ok = document.execCommand("copy"); t.remove(); } catch (x) {} }
+  const o = "📋 Copiar resultado"; btn.textContent = ok ? "✅ Copiado" : "⚠️ Não consegui copiar: selecione o texto"; setTimeout(() => btn.textContent = o, 2200); }
 document.getElementById("atalhos").innerHTML = DIAGS.map(([p, t]) => `<a class="c ${p === alvo ? "on" : ""}" href="/diag?api=${encodeURIComponent(p)}">${t}</a>`).join("");
 (async () => {
   const saida = document.getElementById("saida"), res = document.getElementById("resumo");
