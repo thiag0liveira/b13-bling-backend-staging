@@ -210,7 +210,7 @@ app.use(cors({
 // (em base64 passa de 5 MB) era barrado com erro 413 e a rota nem chegava a rodar. Por isso
 // o comprovante fica de fora do global.
 const _jsonGlobal=express.json({ limit: "5mb" });
-app.use((req,res,next)=> (req.path.startsWith("/api/comprovante/")||req.path==="/api/bling/webhook"||/^\/api\/contas-pagar\/[^/]+\/comprovante$/.test(req.path)) ? next() : _jsonGlobal(req,res,next)); // o aviso do Bling precisa do texto original (assinatura)
+app.use((req,res,next)=> (req.path.startsWith("/api/comprovante/")||req.path==="/api/bling/webhook"||/^\/api\/contas-pagar\/[^/]+\/comprovante$/.test(req.path)||req.path==="/api/contas-pagar/comprovante-multi") ? next() : _jsonGlobal(req,res,next)); // o aviso do Bling precisa do texto original (assinatura)
 
 // Headers de segurança básicos em todas as respostas. Protegem contra:
 // - clickjacking (X-Frame-Options): impede que o site seja embutido em iframe de
@@ -12867,6 +12867,14 @@ app.post("/api/entrada-nota/anexo",acessoEntradaNota,async(req,res)=>{
 // ===== COMPROVANTES DE PAGAMENTO (foto ou PDF) em Contas a Pagar =====
 // Ficam no mesmo armazenamento dos anexos de nota (dono "cp:<id da conta>") e a conta guarda a lista em t.comprovantes. Vêm ANTES de /api/contas-pagar/:id/:acao.
 const _anexoDaConta=(t,aid)=>(t.comprovantes||[]).find(x=>x.id===String(aid));
+app.post("/api/contas-pagar/comprovante-multi",requireAcesso("acesso_contas_pagar"),express.json({limit:"12mb"}),(req,res)=>{
+ // O comprovante da CONTA (documento que originou a despesa: nota, recibo, foto) vale para todas as parcelas lançadas juntas: o arquivo é guardado uma vez e ligado a cada parcela.
+ try{ const C=lerContasPagar(), b=req.body||{}, quem=req.sessao?.nome||"", ids=[...new Set((Array.isArray(b.ids)?b.ids:[]).map(String))].slice(0,60), ts=ids.map(id=>C.titulos.find(x=>x.id===id)).filter(Boolean); if(!ts.length) return res.status(404).json({erro:"conta não encontrada"});
+  const m=String(b.dados||"").match(/^data:([\w\/+.-]+);base64,([\s\S]+)$/); if(!m) return res.status(400).json({erro:"envie o arquivo"}); if(!/^(image\/(jpeg|png|webp)|application\/pdf)$/.test(m[1])) return res.status(400).json({erro:"use foto (JPG, PNG) ou PDF"});
+  const buf=Buffer.from(m[2],"base64"); if(!buf.length||buf.length>8*1048576) return res.status(400).json({erro:"arquivo vazio ou maior que 8 MB"}); if(ts.some(t=>(t.comprovantes||[]).length>=12)) return res.status(409).json({erro:"uma das contas já tem 12 comprovantes"});
+  const novos=_salvarAnexos("cp:"+ts[0].id,[{buf,mime:m[1],nome:b.nome||"comprovante"}],quem); if(!novos.length) return res.status(400).json({erro:"não consegui guardar o arquivo"}); const a=novos[0];
+  ts.forEach(t=>{ (t.comprovantes||=[]).push({id:a.id,mime:a.mime,nome:a.nome,em:a.em,por:quem}); (t.historico||=[]).push({em:Date.now(),por:quem,acao:"anexou comprovante da conta",nome:a.nome}); });
+  salvarJSON(CONTAS_PAGAR_FILE,C); res.json({ok:true,contas:ts.map(t=>t.id)}); }catch(e){ res.status(500).json({erro:e.message}); } });
 app.post("/api/contas-pagar/:id/comprovante",requireAcesso("acesso_contas_pagar"),express.json({limit:"12mb"}),(req,res)=>{
  try{ const C=lerContasPagar(), t=C.titulos.find(x=>x.id===String(req.params.id)), b=req.body||{}, quem=req.sessao?.nome||""; if(!t) return res.status(404).json({erro:"conta não encontrada"});
   const m=String(b.dados||"").match(/^data:([\w\/+.-]+);base64,([\s\S]+)$/); if(!m) return res.status(400).json({erro:"envie o arquivo"});
@@ -12878,12 +12886,12 @@ app.post("/api/contas-pagar/:id/comprovante",requireAcesso("acesso_contas_pagar"
   salvarJSON(CONTAS_PAGAR_FILE,C); res.json({ok:true,comprovantes:t.comprovantes}); }catch(e){ res.status(500).json({erro:e.message}); } });
 app.get("/api/contas-pagar/:id/comprovante/:aid",requireAcesso("acesso_contas_pagar"),(req,res)=>{
  try{ const t=lerContasPagar().titulos.find(x=>x.id===String(req.params.id)); if(!t||!_anexoDaConta(t,req.params.aid)) return res.status(404).json({erro:"comprovante não encontrado"});
-  const a=(lerJSON(ENTRADA_ANEXOS_IDX,{})["cp:"+t.id]||[]).find(x=>x.id===String(req.params.aid)); if(!a) return res.status(404).json({erro:"arquivo não encontrado"});
+  const a=Object.values(lerJSON(ENTRADA_ANEXOS_IDX,{})).flat().find(x=>x.id===String(req.params.aid)); if(!a) return res.status(404).json({erro:"arquivo não encontrado"});
   res.set("Content-Type",a.mime); res.sendFile(path.join(ENTRADA_ANEXOS_DIR,a.id+"."+a.ext)); }catch(e){ res.status(500).json({erro:e.message}); } });
 app.post("/api/contas-pagar/:id/comprovante-remover",requireAcesso("acesso_contas_pagar"),(req,res)=>{
  try{ const C=lerContasPagar(), t=C.titulos.find(x=>x.id===String(req.params.id)), quem=req.sessao?.nome||"", aid=String(req.body?.anexoId||""); if(!t||!_anexoDaConta(t,aid)) return res.status(404).json({erro:"comprovante não encontrado"});
   const c=_anexoDaConta(t,aid); t.comprovantes=t.comprovantes.filter(x=>x.id!==aid); (t.historico||=[]).push({em:Date.now(),por:quem,acao:"removeu comprovante",nome:c.nome});
-  try{ const idx=lerJSON(ENTRADA_ANEXOS_IDX,{}), k="cp:"+t.id, a=(idx[k]||[]).find(x=>x.id===aid); if(a){ idx[k]=idx[k].filter(x=>x.id!==aid); salvarJSON(ENTRADA_ANEXOS_IDX,idx); try{ fs.unlinkSync(path.join(ENTRADA_ANEXOS_DIR,a.id+"."+a.ext)); }catch(e){} } }catch(e){}
+  try{ if(!C.titulos.some(x=>(x.comprovantes||[]).some(y=>y.id===aid))){ const idx=lerJSON(ENTRADA_ANEXOS_IDX,{}); let a=null; Object.keys(idx).forEach(k=>{ const f=(idx[k]||[]).find(x=>x.id===aid); if(f){ a=f; idx[k]=idx[k].filter(x=>x.id!==aid); } }); if(a){ salvarJSON(ENTRADA_ANEXOS_IDX,idx); try{ fs.unlinkSync(path.join(ENTRADA_ANEXOS_DIR,a.id+"."+a.ext)); }catch(e){} } } }catch(e){}
   salvarJSON(CONTAS_PAGAR_FILE,C); res.json({ok:true,comprovantes:t.comprovantes}); }catch(e){ res.status(500).json({erro:e.message}); } });
 app.get("/api/contas-pagar/:id/boleto-imagem",requireAcesso("acesso_contas_pagar"),(req,res)=>{
   try{ const t=lerContasPagar().titulos.find(x=>x.id===String(req.params.id)); if(!t||!t.boletoAnexoId) return res.status(404).json({erro:"esse título não tem imagem de boleto"});
