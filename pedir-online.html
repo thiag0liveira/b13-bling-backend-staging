@@ -179,7 +179,7 @@ let S = novoEstado();
 let OP_ID_FINALIZAR = null; // uma so por tentativa de finalizar; reseta em novoEstado()
 function novoEstado() {
   return {
-    etapa: "inicio",
+    etapa: "catalogo",
     modo: "catalogo",
     doc: "",
     identificado: false,
@@ -525,7 +525,7 @@ function telaSplash(app) {
     </div>
   `).join("");
   app.innerHTML = `
-  <div onclick="if(_splashTimer)clearTimeout(_splashTimer);document.querySelectorAll('.slideCard video').forEach(v=>{try{v.pause()}catch(e){}});const m=document.getElementById('musicaFundo');if(m)m.pause();S.etapa='inicio';render()" style="
+  <div onclick="if(_splashTimer)clearTimeout(_splashTimer);document.querySelectorAll('.slideCard video').forEach(v=>{try{v.pause()}catch(e){}});const m=document.getElementById('musicaFundo');if(m)m.pause();S.etapa='catalogo';render()" style="
     position:fixed;inset:0;display:flex;flex-direction:column;
     cursor:pointer;overflow:hidden;text-align:center;
     background:radial-gradient(circle at 50% 25%,#2b2870 0%,#181542 55%,#0c0a24 100%)">
@@ -699,12 +699,8 @@ function sairDoCadastro() {
     cidade: "",
     uf: ""
   };
-  S.etapa = "inicio";
+  S.etapa = "catalogo";
   render();
-  setTimeout(() => {
-    const el = document.getElementById("docInput");
-    if (el) el.focus();
-  }, 50);
 }
 // chamado a cada tecla no campo de CPF/CNPJ do checkout — se já tinha um
 // cliente identificado antes e o número mudou, limpa os dados que vieram
