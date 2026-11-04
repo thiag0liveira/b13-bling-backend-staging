@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>B13 — Ativos e depreciação</title>
+<style>
+*{box-sizing:border-box;font-family:Arial,Helvetica,sans-serif;margin:0;padding:0}
+:root{--mag:#FF0082;--bg:#0f0d24;--card:#151233;--borda:#2c2660;--muted:#9a95c9;--ok:#3ce88a;--warn:#ffd23f;--ruim:#ff8aa3}
+body{background:var(--bg);color:#fff;min-height:100vh}
+.top{background:linear-gradient(180deg,#2b2870,#262366);border-bottom:3px solid var(--mag);padding:10px 16px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.top img{height:34px}.top .t{font-weight:900;font-size:16px}.top .sp{flex:1}
+.btn{border:none;border-radius:9px;font-weight:800;cursor:pointer;font-size:12.5px;padding:9px 13px;color:#fff;background:var(--mag)}.btn-ghost{background:#1c1846;border:1px solid #3a3480}
+.wrap{padding:14px;display:grid;gap:12px;max-width:1000px;margin:0 auto}
+.card{background:var(--card);border:1px solid var(--borda);border-radius:12px;padding:13px;min-width:0}.card h3{font-size:15px;margin-bottom:8px}
+.muted,.ic{color:var(--muted);font-size:12px;line-height:1.5}
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.kpi{background:#120f2c;border:1px solid var(--borda);border-radius:12px;padding:11px}.kpi .v{font-size:19px;font-weight:900}.kpi .l{font-size:10.5px;color:var(--muted);font-weight:700;text-transform:uppercase;margin-top:3px}
+.at{border:1px solid var(--borda);border-radius:10px;padding:10px;margin-bottom:8px;background:#120f2c}.at .h{display:flex;gap:8px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap}.at b{font-size:14px}
+.tag{display:inline-block;font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:6px;background:#2a2060;color:#c9b8ff}.tag.b{background:#3a2a0a;color:var(--warn)}
+.lin{display:flex;justify-content:space-between;gap:8px;font-size:12.5px;padding:3px 0;border-top:1px solid #1d1946}
+.bar{display:flex;align-items:center;gap:6px;font-size:12px;margin:2px 0}.bar .r{width:62px;color:var(--muted);flex:none}.bar .b{height:12px;background:linear-gradient(90deg,#ff0082,#ff5fa8);border-radius:4px;min-width:2px}
+input,select{background:#0d0b22;border:1px solid #3a3480;border-radius:8px;padding:8px;color:#fff;font-size:14px;width:100%}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+#mod{position:fixed;inset:0;background:rgba(5,3,20,.8);z-index:9999;display:none;align-items:flex-start;justify-content:center;padding:14px;overflow:auto}#mod.aberto{display:flex}#modCorpo{background:#16123a;border:2px solid var(--mag);border-radius:16px;max-width:520px;width:100%;padding:14px}
+.err{color:var(--ruim);font-size:13px;margin-top:6px}
+</style>
+<script src="/nav.js"></script>
+</head>
+<body><script>
+  (function(){ if(!b13RequireLogin()) return; if(!b13BloquearSeSemAcesso("/ativos")) return;
+    document.addEventListener("DOMContentLoaded",function(){ const nav=document.createElement("div"); nav.innerHTML=b13RenderNav("/ativos"); document.body.insertBefore(nav,document.body.firstChild); }); })();
+</script>
+<div class="top"><img src="/logo"><div class="t">🏭 Ativos e depreciação</div><div class="sp"></div><a class="btn btn-ghost" href="/contas-pagar" style="text-decoration:none">📒 Contas a pagar</a><button class="btn" onclick="abrirForm()">➕ Cadastrar ativo</button></div>
+<div class="wrap" id="corpo"><div class="card muted">Carregando…</div></div>
+<div id="mod" onclick="if(event.target===this)fechar()"><div id="modCorpo"></div></div>
+<script>
+const B = location.protocol.indexOf("http") === 0 ? "" : "https://app.b13bebidas.com.br";
+const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+function token() { try { return (b13GetSession() || {}).token || ""; } catch (e) { return ""; } }
+async function api(p, op) { op = op || {}; const r = await fetch(B + p, { ...op, headers: { "Content-Type": "application/json", "X-Auth-Token": token() } }); const j = await r.json().catch(() => ({})); return { ok: r.ok, j }; }
+const brl = n => n == null || isNaN(n) ? "—" : "R$ " + Number(n).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const dmy = d => d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—", mesBR = m => { const [a, n] = m.split("-"); return ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"][+n - 1] + "/" + a.slice(2); };
+const hoje = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10), fmtN = n => String(Number(n).toFixed(2)).replace(".", ","), numIn = x => Number(String(x == null ? "" : x).replace(",", ".")) || 0;
+let D = null;
+const fechar = () => document.getElementById("mod").classList.remove("aberto"), abrir = h => { document.getElementById("modCorpo").innerHTML = h; document.getElementById("mod").classList.add("aberto"); };
+async function carregar() { const { ok, j } = await api("/api/ativos"); if (!ok) { document.getElementById("corpo").innerHTML = `<div class="card"><div class="err">${esc(j.erro || "Não consegui carregar.")}</div></div>`; return; } D = j; render(); }
+function render() {
+  const T = D.totais, mx = Math.max(1, ...D.proximosMeses.map(x => x.valor));
+  let h = `<div class="card"><div class="kpis"><div class="kpi"><div class="v">${T.ativos}</div><div class="l">Ativos em uso</div></div><div class="kpi"><div class="v">${brl(T.valorCompra)}</div><div class="l">Valor de compra</div></div><div class="kpi"><div class="v">${brl(T.depMensal)}</div><div class="l">Depreciação por mês (ativos)</div></div><div class="kpi"><div class="v">${brl(T.depAcumulada)}</div><div class="l">Depreciação acumulada</div></div><div class="kpi"><div class="v">${brl(T.valorContabil)}</div><div class="l">Valor contábil hoje</div></div></div>
+   <div class="ic" style="white-space:normal;margin-top:8px">A depreciação é linear: (valor de compra − valor residual) ÷ meses de vida útil, todo mês enquanto o bem estiver ativo. Ela entra na linha 6.1 do resultado, sem sair do caixa. ${esc(D.frota.aviso)} Hoje a frota própria soma ${brl(D.frota.depreciacaoFrotaMes)} por mês.</div></div>`;
+  if (D.contasSemAtivo.length) { const g = {}; D.contasSemAtivo.forEach(t => { const k = (t.fornecedor || "") + "|" + (t.descricao || ""); (g[k] || (g[k] = { fornecedor: t.fornecedor, descricao: t.descricao, valor: 0, ids: [], venc: t.vencimento })).valor += Number(t.valor) || 0; g[k].ids.push(t.id); if (t.vencimento < g[k].venc) g[k].venc = t.vencimento; }); window._SEM = Object.values(g);
+    h += `<div class="card" style="border-color:#7a5c10"><h3>⚠️ Compras de ativo (9.1) sem ativo cadastrado</h3><div class="ic" style="white-space:normal;margin-bottom:6px">Estas contas foram lançadas como compra de equipamento ou veículo, mas ainda não têm o bem cadastrado, então ainda não geram depreciação.</div>${window._SEM.map((x, i) => `<div class="lin"><span>${esc(x.descricao || "(sem descrição)")} · ${esc(x.fornecedor || "")} · ${x.ids.length} conta(s) · ${dmy(x.venc)}</span><span><b>${brl(x.valor)}</b> <button class="btn" style="padding:4px 9px" onclick="abrirForm(null,${i})">Cadastrar</button></span></div>`).join("")}</div>`; }
+  h += `<div class="card"><h3>📈 Depreciação dos próximos 12 meses (ativos cadastrados)</h3>${D.proximosMeses.map(x => `<div class="bar"><span class="r">${mesBR(x.mes)}</span><span class="b" style="width:${Math.max(2, x.valor / mx * 60)}%"></span><span>${brl(x.valor)}</span></div>`).join("")}</div>`;
+  h += `<div class="card"><h3>🏷️ Bens cadastrados</h3>${D.ativos.length ? D.ativos.map(a => `<div class="at"><div class="h"><div><b>${esc(a.nome)}</b> <span class="tag">${esc(a.tipoNome)}</span> ${a.status === "baixado" ? '<span class="tag b">baixado em ' + dmy(a.baixadoEm) + "</span>" : ""}${a.ignorarDepreciacao ? ' <span class="tag b">na Frota própria</span>' : ""}<div class="ic">comprado em ${dmy(a.dataCompra)}${a.fornecedor ? " de " + esc(a.fornecedor) : ""} · em uso desde ${dmy(a.emUsoDesde)}</div></div>
+     <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-ghost" style="padding:5px 9px" onclick="abrirForm('${a.id}')">✏️</button>${a.status === "ativo" ? `<button class="btn btn-ghost" style="padding:5px 9px" onclick="abrirBaixa('${a.id}')">📉 Baixar</button>` : `<button class="btn btn-ghost" style="padding:5px 9px" onclick="reativar('${a.id}')">↩️ Reativar</button>`}</div></div>
+     <div class="lin"><span>Valor de compra</span><b>${brl(a.valorCompra)}</b></div><div class="lin"><span>Vida útil · residual</span><span>${Math.round(a.vidaMeses / 12 * 10) / 10} anos · ${brl(a.residual)}</span></div><div class="lin"><span>Depreciação por mês</span><b>${a.ignorarDepreciacao ? "—" : brl(a.depMensalPlena)}</b></div><div class="lin"><span>Depreciado até hoje</span><span>${brl(a.depAcumulada)}</span></div><div class="lin"><span>Valor contábil hoje</span><b>${brl(a.valorContabil)}</b></div>
+     ${a.status === "ativo" && !a.ignorarDepreciacao ? `<div class="lin"><span>Depreciação até</span><span>${a.fimDepreciacao ? mesBR(a.fimDepreciacao) + (a.mesesRestantes ? " (faltam " + a.mesesRestantes + " meses)" : "") : "—"}</span></div>` : ""}${a.status === "baixado" ? `<div class="lin"><span>Baixa</span><span>${esc(a.motivoBaixa || "")}${a.valorVenda != null ? " · vendido por " + brl(a.valorVenda) : ""}</span></div>` : ""}${a.obs ? `<div class="ic">${esc(a.obs)}</div>` : ""}</div>`).join("") : `<div class="muted">Nenhum ativo cadastrado. Ao lançar uma despesa na categoria 9.1 (compra de equipamentos e veículos), o bem é cadastrado junto. Também dá para cadastrar aqui um bem comprado antes.</div>`}</div>`;
+  document.getElementById("corpo").innerHTML = h; }
+function abrirForm(id, semIdx) { const a = id ? D.ativos.find(x => x.id === id) : null, pre = semIdx != null ? window._SEM[semIdx] : null, tipos = D.tipos, v = a || { nome: pre ? pre.descricao : "", tipo: "maquina", valorCompra: pre ? pre.valor : "", dataCompra: pre ? pre.venc : hoje(), emUsoDesde: pre ? pre.venc : hoje(), vidaMeses: 120, residual: 0, fornecedor: pre ? pre.fornecedor : "", obs: "", ignorarDepreciacao: false };
+  window._PREIDS = pre ? pre.ids : null;
+  abrir(`<h3>${a ? "✏️ Editar ativo" : "➕ Cadastrar ativo"}</h3><div class="grid2"><label><div class="ic">Nome do bem</div><input id="fNome" value="${esc(v.nome)}"></label><label><div class="ic">Tipo</div><select id="fTipo" onchange="fAnos.value=TIPOS[this.value].anos">${Object.entries(tipos).map(([k, t]) => `<option value="${k}" ${k === v.tipo ? "selected" : ""}>${esc(t.nome)}</option>`).join("")}</select></label>
+   <label><div class="ic">Valor da compra R$</div><input id="fValor" inputmode="decimal" value="${v.valorCompra === "" ? "" : fmtN(v.valorCompra)}"></label><label><div class="ic">Data da compra</div><input id="fData" type="date" value="${esc(v.dataCompra)}"></label>
+   <label><div class="ic">Em uso desde (começa a depreciar)</div><input id="fUso" type="date" value="${esc(v.emUsoDesde)}"></label><label><div class="ic">Vida útil (anos)</div><input id="fAnos" inputmode="decimal" value="${String(Math.round(v.vidaMeses / 12 * 100) / 100).replace(".", ",")}"></label>
+   <label><div class="ic">Valor residual R$ (quanto vale no fim)</div><input id="fRes" inputmode="decimal" value="${fmtN(v.residual || 0)}"></label><label><div class="ic">Fornecedor</div><input id="fForn" value="${esc(v.fornecedor || "")}"></label></div>
+   <label class="ic" style="display:block;margin-top:6px"><input type="checkbox" id="fFrota" style="width:auto" ${v.ignorarDepreciacao ? "checked" : ""}> já está na Frota própria (não depreciar de novo aqui)</label>
+   <label style="display:block;margin-top:6px"><div class="ic">Observação</div><input id="fObs" value="${esc(v.obs || "")}"></label><div id="fMsg"></div>
+   <div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-ghost" style="flex:1" onclick="fechar()">Cancelar</button><button class="btn" style="flex:1" onclick="salvarAtivo('${id || ""}')">💾 Salvar</button></div>`); window.TIPOS = tipos; }
+async function salvarAtivo(id) { const g = x => document.getElementById(x).value; const corpo = { nome: g("fNome"), tipo: g("fTipo"), valorCompra: g("fValor").replace(",", "."), dataCompra: g("fData"), emUsoDesde: g("fUso"), vidaAnos: g("fAnos").replace(",", "."), residual: g("fRes").replace(",", "."), fornecedor: g("fForn"), obs: g("fObs"), ignorarDepreciacao: document.getElementById("fFrota").checked };
+  if (!id && window._PREIDS) corpo.contas = window._PREIDS; const { ok, j } = await api(id ? `/api/ativos/${id}/editar` : "/api/ativos", { method: "POST", body: JSON.stringify(corpo) }); if (!ok) { document.getElementById("fMsg").innerHTML = `<div class="err">${esc(j.erro || "Não consegui salvar.")}</div>`; return; } fechar(); carregar(); }
+function abrirBaixa(id) { const a = D.ativos.find(x => x.id === id); abrir(`<h3>📉 Baixar ${esc(a.nome)}</h3><div class="ic" style="white-space:normal">Use quando o bem foi vendido, perdido ou descartado. A depreciação para no mês da baixa.</div><div class="grid2" style="margin-top:8px"><label><div class="ic">Data da baixa</div><input id="bData" type="date" value="${hoje()}"></label><label><div class="ic">Vendido por R$ (se foi venda)</div><input id="bValor" inputmode="decimal"></label></div><label style="display:block;margin-top:6px"><div class="ic">Motivo</div><input id="bMot" placeholder="vendido, roubado, sucata…"></label><div id="fMsg"></div><div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-ghost" style="flex:1" onclick="fechar()">Cancelar</button><button class="btn" style="flex:1" onclick="baixar('${id}')">Confirmar baixa</button></div>`); }
+async function baixar(id) { const g = x => document.getElementById(x).value; const { ok, j } = await api(`/api/ativos/${id}/baixar`, { method: "POST", body: JSON.stringify({ data: g("bData"), valorVenda: g("bValor").replace(",", "."), motivo: g("bMot") }) }); if (!ok) { document.getElementById("fMsg").innerHTML = `<div class="err">${esc(j.erro || "Não consegui.")}</div>`; return; } fechar(); carregar(); }
+async function reativar(id) { if (!confirm("Reativar este bem? A depreciação volta a contar.")) return; await api(`/api/ativos/${id}/reativar`, { method: "POST", body: "{}" }); carregar(); }
+carregar();
+</script>
+</body>
+</html>
