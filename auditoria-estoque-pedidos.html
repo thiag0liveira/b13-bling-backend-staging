@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>B13 — Pedidos sem baixa de estoque</title>
+<style>
+*{box-sizing:border-box;font-family:Arial,Helvetica,sans-serif;margin:0;padding:0}
+:root{--mag:#FF0082;--bg:#0f0d24;--card:#151233;--borda:#2c2660;--muted:#9a95c9;--ok:#3ce88a;--warn:#ffd23f;--ruim:#ff8aa3}
+body{background:var(--bg);color:#fff;min-height:100vh}
+.top{background:linear-gradient(180deg,#2b2870,#262366);border-bottom:3px solid var(--mag);padding:10px 16px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.top img{height:34px}.top .t{font-weight:900;font-size:16px}.top .sp{flex:1}
+.btn{border:none;border-radius:9px;font-weight:800;cursor:pointer;font-size:12.5px;padding:9px 13px;color:#fff;background:var(--mag)}.btn-ghost{background:#1c1846;border:1px solid #3a3480}
+.wrap{padding:14px;display:grid;gap:12px;max-width:1000px;margin:0 auto}
+.card{background:var(--card);border:1px solid var(--borda);border-radius:12px;padding:13px;min-width:0}.card h3{font-size:15px;margin-bottom:8px}
+.muted,.ic{color:var(--muted);font-size:12px;line-height:1.5}
+select{background:#0d0b22;border:1px solid #3a3480;border-radius:9px;padding:9px;color:#fff;font-size:14px}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.chip{border:1px solid #3a3480;background:#1c1846;border-radius:20px;padding:6px 11px;font-size:12px;font-weight:800;cursor:pointer;color:#cfcaf5}.chip.on{background:var(--mag);border-color:var(--mag);color:#fff}
+.ped{border:1px solid var(--borda);border-left:5px solid #3a3480;border-radius:10px;padding:10px;margin-bottom:8px;background:#120f2c}.ped.sem_baixa{border-left-color:#ff4d6d}.ped.parcial{border-left-color:var(--warn)}.ped.provavel{border-left-color:#5fb3ff}.ped.ok{border-left-color:var(--ok)}
+.ped .h{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center}.tag{display:inline-block;font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:6px;background:#2a2060;color:#c9b8ff}.tag.r{background:#4a1020;color:#ff8aa3}.tag.a{background:#3a2a0a;color:var(--warn)}.tag.v{background:#0d3a24;color:var(--ok)}.tag.b{background:#0d2a44;color:#7fd0ff}
+table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}th{text-align:left;color:var(--muted);font-size:10.5px;text-transform:uppercase;padding:4px}td{padding:5px 4px;border-top:1px solid #1d1946}td.n,th.n{text-align:right;white-space:nowrap}
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px}.kpi{background:#120f2c;border:1px solid var(--borda);border-radius:12px;padding:10px}.kpi .v{font-size:20px;font-weight:900}.kpi .l{font-size:10.5px;color:var(--muted);font-weight:700;text-transform:uppercase;margin-top:2px}
+</style>
+<script src="/nav.js"></script>
+</head>
+<body><script>
+  (function(){ if(!b13RequireLogin()) return; if(!b13BloquearSeSemAcesso("/auditoria-estoque-pedidos")) return;
+    document.addEventListener("DOMContentLoaded",function(){ const nav=document.createElement("div"); nav.innerHTML=b13RenderNav("/auditoria-estoque-pedidos"); document.body.insertBefore(nav,document.body.firstChild); }); })();
+</script>
+<div class="top"><img src="/logo"><div class="t">🔎 Pedidos sem baixa de estoque</div><div class="sp"></div><button class="btn btn-ghost" onclick="baixarCsv()">⬇️ CSV</button></div>
+<div class="wrap">
+ <div class="card"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><label class="ic">Período <select id="fDias" onchange="carregar()"><option value="3">3 dias</option><option value="7" selected>7 dias</option><option value="15">15 dias</option><option value="30">30 dias</option><option value="60">60 dias</option></select></label>
+  <label class="ic">Situação <select id="fSit" onchange="carregar()"><option value="atendido" selected>Só Atendido</option><option value="todas">Todas que baixam estoque</option></select></label></div>
+  <div class="chips" id="chips"></div>
+  <div class="ic" style="white-space:normal;margin-top:8px">Mostra os pedidos que chegaram numa situação que baixa estoque e confere, no histórico de estoque do sistema, se o saldo dos produtos caiu por causa deles. <b style="color:#fff">"Sem baixa" não prova que o Bling não baixou</b>: pode ser que o aviso de estoque do Bling não tenha chegado. Por isso, para cada caso, confira no Bling o histórico de estoque do produto.</div></div>
+ <div class="card"><div class="kpis" id="kpis"></div><div class="ic" id="livro" style="margin-top:6px"></div></div>
+ <div class="card"><h3 id="tit">Pedidos</h3><div id="lista" class="muted">Carregando…</div></div>
+ <div class="card"><h3>Como conferir e corrigir no Bling</h3><div class="ic" style="white-space:normal;line-height:1.7">1. No Bling, abra o produto e veja o histórico de estoque: deve haver uma saída com o número do pedido.<br>2. Se não houver, abra o pedido no Bling: se a situação atual não baixa estoque, use o lançamento de estoque do pedido. Se já baixa, volte e avance a situação.<br>3. Cuidado para não lançar duas vezes. Confira o saldo do produto antes e depois.<br>4. Se o problema se repetir em muitos pedidos, a causa costuma ser a configuração das situações do Bling (a situação usada não está marcada para movimentar estoque). Veja também os campos que o Bling devolve de um pedido: <span id="lnkDiag"></span></div></div>
+</div>
+<script>
+const B = location.protocol.indexOf("http") === 0 ? "" : "https://app.b13bebidas.com.br";
+const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+function token() { try { return (b13GetSession() || {}).token || ""; } catch (e) { return ""; } }
+async function api(p) { try { const r = await fetch(B + p, { headers: { "X-Auth-Token": token() } }); const j = await r.json().catch(() => ({})); return r.ok ? j : { erro: j.erro || ("erro " + r.status) }; } catch (e) { return { erro: e.message }; } }
+const dmy = d => d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—", num = n => Number(n || 0).toLocaleString("pt-BR", { maximumFractionDigits: 2 }), brl = n => "R$ " + Number(n || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const NOMES = { sem_baixa: ["Sem baixa confirmada", "r"], parcial: ["Baixa parcial", "a"], provavel: ["Provável (queda sem pedido ligado)", "b"], ok: ["Baixa confirmada", "v"], sem_historico: ["Antes do histórico de estoque", ""], sem_controle: ["Sem item com controle de estoque", ""] };
+let D = null, FILTRO = "sem_baixa,parcial";
+const params = () => `dias=${document.getElementById("fDias").value}&sit=${document.getElementById("fSit").value}`;
+async function carregar() { document.getElementById("lista").innerHTML = "Carregando…"; D = await api("/api/auditoria/estoque-pedidos?" + params()); if (D.erro) { document.getElementById("lista").innerHTML = `<span style="color:#ff8aa3">${esc(D.erro)}</span>`; return; } render(); }
+function render() { const T = D.totais, ordem = ["sem_baixa", "parcial", "provavel", "ok", "sem_historico", "sem_controle"];
+  document.getElementById("kpis").innerHTML = `<div class="kpi"><div class="v">${T.total}</div><div class="l">Pedidos conferidos</div></div>` + ordem.filter(k => k !== "sem_controle").map(k => `<div class="kpi"><div class="v" style="color:${k === "sem_baixa" ? "#ff8aa3" : k === "ok" ? "#3ce88a" : "#fff"}">${T[k] || 0}</div><div class="l">${NOMES[k][0]}</div></div>`).join("");
+  document.getElementById("livro").textContent = D.livroDesde ? `O histórico de estoque do sistema começa em ${dmy(D.livroDesde)}: pedidos de antes dessa data aparecem como "antes do histórico".` : "O histórico de estoque ainda não tem movimentos.";
+  document.getElementById("chips").innerHTML = [["sem_baixa,parcial", "⚠️ Precisam de conferência"], ["sem_baixa", "Sem baixa"], ["parcial", "Parcial"], ["provavel", "Prováveis"], ["ok", "Confirmados"], ["", "Todos"]].map(([k, r]) => `<span class="chip ${FILTRO === k ? "on" : ""}" onclick="FILTRO='${k}';render()">${r}</span>`).join("");
+  const L = D.pedidos.filter(p => !FILTRO || FILTRO.split(",").includes(p.resultado)); document.getElementById("tit").textContent = `Pedidos (${L.length})`;
+  document.getElementById("lista").innerHTML = L.length ? L.map(p => `<div class="ped ${p.resultado}"><div class="h"><b>Pedido #${esc(p.numero || p.id)}</b><span><span class="tag">${esc(p.situacao)}</span> <span class="tag ${NOMES[p.resultado][1]}">${NOMES[p.resultado][0]}</span></span></div><div class="ic">${dmy(p.data)} · ${esc(p.cliente || "Consumidor final")} · ${brl(p.total)}</div>
+    ${p.itens.length ? `<table><tr><th>Produto</th><th class="n">No pedido</th><th class="n">Baixou</th><th>Situação</th></tr>${p.itens.map(i => `<tr><td>${esc(i.nome)}</td><td class="n">${num(i.pedido)}</td><td class="n">${num(i.baixado)}</td><td>${i.situacao === "ok" ? "✅" : i.situacao === "parcial" ? "⚠️ parcial" : i.situacao === "provavel" ? "🔎 provável" : "❌ sem baixa"}${i.provavel ? `<div class="ic">${esc(i.provavel)}</div>` : ""}</td></tr>`).join("")}</table>` : ""}</div>`).join("") : `<div class="muted">Nada neste filtro.</div>`; }
+function baixarCsv() { fetch(B + "/api/auditoria/estoque-pedidos.csv?" + params(), { headers: { "X-Auth-Token": token() } }).then(r => r.blob()).then(b => { const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = "auditoria_estoque_pedidos.csv"; a.click(); }); }
+{ const q = new URLSearchParams(location.search); if (["3", "7", "15", "30", "60"].includes(q.get("dias"))) document.getElementById("fDias").value = q.get("dias"); document.getElementById("lnkDiag").innerHTML = `<a href="/diag?api=${encodeURIComponent("/api/diag/pedido-bling?numero=NUMERO_DO_PEDIDO")}" style="color:#7fd0ff">/diag (troque NUMERO_DO_PEDIDO)</a>`; }
+carregar();
+</script>
+</body>
+</html>
