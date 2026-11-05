@@ -313,7 +313,7 @@
     card.appendChild(el("div", {"class":"aviso-geral", id: "avisoGeral", role: "alert"}));
     var btn = el("button", {"class":"btn btn-mag", id: "btnEnviar", type: "button", style: "margin-top:18px", text: d.qtdFrases > 1 ? "Enviar minhas frases" : "Enviar minha frase"});
     card.appendChild(btn);
-    card.appendChild(el("div", {"class":"prazo", text: "até " + (d.prazo || "30/10, às 23h59") + " · resultado em " + (d.resultado || "07/11")}));
+    card.appendChild(el("div", {"class":"prazo", text: "até " + (d.prazo || "08/11/2026, às 23h59") + " · resultado em " + (d.resultado || "09/11/2026")}));
     conteudo.appendChild(card);
 
     // comportamento
@@ -453,7 +453,7 @@
     }
     bloco.appendChild(lista);
     telaEstado("ok", agora ? "Frase recebida!" : "Este link já foi usado",
-      (agora ? "Obrigado por participar. " : "") + "Recebemos em " + (em || "") + ". O resultado sai em 07/11, às 15h30, no @b13_bebidas. Se você ganhar, a B13 avisa pelo WhatsApp.", bloco);
+      (agora ? "Obrigado por participar. " : "") + "Recebemos em " + (em || "") + ". O resultado sai em " + ((DADOS && DADOS.resultadoCurto) || "09/11") + ", às " + ((DADOS && DADOS.resultadoHora) || "15h30") + ", no @b13_bebidas. Se você ganhar, a B13 avisa pelo WhatsApp.", bloco);
     window.scrollTo({top: 0, behavior: "smooth"});
   }
 
@@ -470,7 +470,7 @@
         if (d.status === "aberto") return montarFormulario(d);
         if (d.teste) faixaTeste();
         if (d.status === "enviado") return telaEnviado(d.frasesEnviadas, d.enviadoEm, false, d.protocolo);
-        if (d.status === "encerrado") return telaEstado("relogio", "Envio encerrado", "O prazo para enviar frases terminou em 30/10/2026, às 23h59. O resultado sai em 07/11, às 15h30, no @b13_bebidas.");
+        if (d.status === "encerrado") return telaEstado("relogio", "Envio encerrado", "O prazo para enviar frases terminou em " + (d.prazo || "08/11/2026, às 23h59") + ". O resultado sai em " + (d.resultadoCurto || "09/11") + ", às " + (d.resultadoHora || "15h30") + ", no @b13_bebidas.");
         if (d.status === "nao_iniciado") return telaEstado("relogio", "Ainda não começou", "O concurso começa em 01/10/2026, à 00h01.");
         if (d.status === "revogado") return telaEstado("x", "Link cancelado", "Este link foi cancelado pela B13. Fale com a gente no WhatsApp oficial " + (d.whatsappOficial || "") + ".");
         telaEstado("x", "Algo deu errado", "Tente de novo em instantes.");

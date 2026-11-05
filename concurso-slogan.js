@@ -25,10 +25,11 @@ import path from "path";
 
 const CONCURSO = {
   inicio: Date.parse(process.env.CONCURSO_INICIO || "2026-10-01T00:01:00-03:00"),
-  fimEnvio: Date.parse(process.env.CONCURSO_FIM_ENVIO || "2026-10-30T23:59:59-03:00"),
+  fimEnvio: (() => { const PRORROGADO = Date.parse("2026-11-08T23:59:59-03:00"), env = Date.parse(process.env.CONCURSO_FIM_ENVIO || ""); return Number.isFinite(env) ? Math.max(env, PRORROGADO) : PRORROGADO; })(), // prorrogado de 30/10 para 08/11/2026; uma variável antiga com data anterior não encurta de novo
+  resultadoCurto: process.env.CONCURSO_RESULTADO || "09/11", resultadoLongo: process.env.CONCURSO_RESULTADO_LONGO || "09/11/2026", resultadoHora: process.env.CONCURSO_RESULTADO_HORA || "15h30",
   // pedidos só contam a partir do início da DIVULGAÇÃO do atacado (05/10), não do início do concurso (01/10)
   dataPedidoMin: process.env.CONCURSO_DATA_PEDIDO_MIN || "2026-10-05",
-  dataPedidoMax: "2026-10-30",
+  dataPedidoMax: process.env.CONCURSO_DATA_PEDIDO_MAX || "2026-10-30", // quais pedidos geram frases (a prorrogação não muda isso)
   faixas: { atacado: 3000, varejo: 200 },
   // Esta campanha da Rota 2 é SÓ para o atacado (R$ 3.000 por frase). A faixa de
   // varejo (R$ 200) fica desligada; só liga com CONCURSO_PERMITIR_VAREJO=1, se um
@@ -86,6 +87,10 @@ export function registrarConcursoSlogan(app, deps) {
     const dv = (n) => { let s = 0; for (let i = 0; i < n; i++) s += Number(c[i]) * (n + 1 - i); const r = (s * 10) % 11; return r === 10 ? 0 : r; };
     return dv(9) === Number(c[9]) && dv(10) === Number(c[10]);
   };
+  // textos de data derivados do prazo (um lugar só): mudar CONCURSO_FIM_ENVIO no Railway muda tudo
+  const dBR = (ms) => new Date(ms - 3 * 3600e3).toISOString().slice(0, 10).split("-").reverse(); // [dd, mm, aaaa]
+  const dCurta = (ms) => { const [d, m] = dBR(ms); return `${d}/${m}`; }, dLonga = (ms) => { const [d, m, a] = dBR(ms); return `${d}/${m}/${a}`; };
+  const prazoCurto = () => `${dCurta(CONCURSO.fimEnvio)}, às 23h59`, prazoLongo = () => `${dLonga(CONCURSO.fimEnvio)}, às 23h59`;
   const fase = () => {
     const t = Date.now();
     if (t < CONCURSO.inicio) return "nao_iniciado";
@@ -107,7 +112,7 @@ export function registrarConcursoSlogan(app, deps) {
       `Envie pelo link do seu pedido (é individual e só pode ser usado uma vez):`,
       urlDoLink(L.token),
       ``,
-      `Prazo: até 30/10, às 23h59. Resultado em 07/11.`,
+      `Prazo: até ${prazoCurto()}. Resultado em ${CONCURSO.resultadoCurto}.`,
       `Regulamento completo no link da bio do @b13_bebidas. Só para maiores de 18 anos.`,
     ].join("\n");
   };
@@ -120,7 +125,7 @@ export function registrarConcursoSlogan(app, deps) {
       ``,
       `Passando para lembrar: o seu pedido nº ${L.numero} dá direito a ${n} frase${n > 1 ? "s" : ""} no Concurso do Slogan. A frase escolhida vira o slogan da B13 e vale R$ 2.000,00 em compras.`,
       ``,
-      dias <= 1 ? `É o último dia! O envio vai até hoje, 30/10, às 23h59:` : `Faltam ${dias} dias. O envio vai até 30/10, às 23h59:`,
+      dias <= 1 ? `É o último dia! O envio vai até hoje, ${dCurta(CONCURSO.fimEnvio)}, às 23h59:` : `Faltam ${dias} dias. O envio vai até ${dCurta(CONCURSO.fimEnvio)}, às 23h59:`,
       urlDoLink(L.token),
     ].join("\n");
   };
@@ -371,7 +376,7 @@ export function registrarConcursoSlogan(app, deps) {
       numero: L.numero, dataPedido: L.dataPedido, qtdFrases: L.qtdFrases, tipo: L.tipo,
       estabelecimento: L.cliente?.pj ? { razaoSocial: L.cliente.nome, fantasia: L.cliente.fantasia || "", cnpj: mascaraDoc(L.cliente.documento) } : null,
       pedirEstabelecimento: L.tipo === "atacado" && !L.cliente?.pj,
-      pedirCpf: CONCURSO.pedirCpf, prazo: "30/10/2026, às 23h59", resultado: "07/11/2026",
+      pedirCpf: CONCURSO.pedirCpf, prazo: prazoLongo(), resultado: CONCURSO.resultadoLongo, resultadoCurto: CONCURSO.resultadoCurto, resultadoHora: CONCURSO.resultadoHora,
       whatsappOficial: CONCURSO.whatsappOficial, regulamentoUrl: CONCURSO.regulamentoUrl,
       maxCaracteres: CONCURSO.maxCaracteresFrase, teste: !!L.teste,
     };
@@ -393,7 +398,7 @@ export function registrarConcursoSlogan(app, deps) {
     if (L.status === "enviado") return res.status(409).json({ erro: "As frases deste pedido já foram enviadas. Cada link só pode ser usado uma vez." });
     if (L.status === "revogado") return res.status(410).json({ erro: "Este link foi cancelado pela B13. Fale com a gente no WhatsApp " + CONCURSO.whatsappOficial + "." });
     const f = fase();
-    if (f === "encerrado") return res.status(410).json({ erro: "O envio de frases encerrou em 30/10/2026, às 23h59." });
+    if (f === "encerrado") return res.status(410).json({ erro: `O envio de frases encerrou em ${prazoLongo()}.` });
     if (f === "nao_iniciado") return res.status(403).json({ erro: "O concurso começa em 01/10/2026." });
 
     const b = req.body || {};
@@ -453,7 +458,7 @@ export function registrarConcursoSlogan(app, deps) {
     const links = Object.values(d.links).filter(l => !l.teste); d.frases = d.frases.filter(x => !x.teste);
     const validas = d.frases.filter(x => x.status === "valida");
     res.json({
-      fase: fase(), inicio: new Date(CONCURSO.inicio).toISOString(), fimEnvio: new Date(CONCURSO.fimEnvio).toISOString(),
+      fase: fase(), inicio: new Date(CONCURSO.inicio).toISOString(), fimEnvio: new Date(CONCURSO.fimEnvio).toISOString(), resultadoCurto: CONCURSO.resultadoCurto, resultadoHora: CONCURSO.resultadoHora,
       pedirCpf: CONCURSO.pedirCpf, faixas: CONCURSO.faixas, permitirVarejo: CONCURSO.permitirVarejo,
       links: { total: links.length, aguardando: links.filter(l => l.status === "aberto").length, enviados: links.filter(l => l.status === "enviado").length, revogados: links.filter(l => l.status === "revogado").length,
                frasesLiberadas: links.filter(l => l.status !== "revogado").reduce((s, l) => s + (l.qtdFrases || 0), 0) },

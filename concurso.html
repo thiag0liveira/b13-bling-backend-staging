@@ -269,10 +269,11 @@ function tagConf(c){
   return `<span class="tag erro" title="${esc((c.problemas||[]).join("; "))}">${esc((c.problemas||[])[0]||"problema")}</span>`;
 }
 
+let FIM_ENVIO_MS = Date.parse("2026-11-08T23:59:59-03:00");
 async function carregarResumo(){
   const {j}=await api("/api/concurso/resumo");
   const f={aberto:"Envio aberto",encerrado:"Envio encerrado",nao_iniciado:"Ainda não começou"}[j.fase]||j.fase;
-  document.getElementById("faseTxt").textContent=`${f} · atacado, 1 frase a cada R$ 3.000 · envio até 30/10/2026 às 23h59 · resultado 07/11`;
+  document.getElementById("faseTxt").textContent=`${f} · atacado, 1 frase a cada R$ 3.000 · envio até ${(()=>{ const p=new Date(Date.parse(j.fimEnvio)-3*3600e3).toISOString().slice(0,10).split("-").reverse(); return p.join("/"); })()} às 23h59 · resultado ${j.resultadoCurto||"09/11"}`; if(j.fimEnvio){ FIM_ENVIO_MS=Date.parse(j.fimEnvio); try{ renderCampanha(); }catch(e){} }
   // a faixa de varejo só aparece se for ligada no servidor (CONCURSO_PERMITIR_VAREJO=1)
   document.getElementById("gTipoBox").hidden=!j.permitirVarejo; document.getElementById("wTipoBox").hidden=!j.permitirVarejo;
   if(!j.permitirVarejo){ document.getElementById("gTipo").value="atacado"; document.getElementById("wTipo").value="atacado"; }
@@ -442,10 +443,10 @@ function irPara(etapa){
   const s=document.getElementById("sec_"+etapa); if(s) s.scrollIntoView({behavior:"smooth",block:"start"});
 }
 function renderCampanha(){
-  const ini=Date.parse("2026-10-05T00:00:00-03:00"), fim=Date.parse("2026-10-30T23:59:59-03:00"), t=Date.now();
+  const ini=Date.parse("2026-10-05T00:00:00-03:00"), fim=FIM_ENVIO_MS, t=Date.now();
   const total=Math.round((fim-ini)/86400000), dia=Math.min(total,Math.max(0,Math.floor((t-ini)/86400000)+1)), falta=Math.max(0,Math.ceil((fim-t)/86400000));
   document.getElementById("campanha").innerHTML=`<span>Dia <b style="color:#fff">${dia}</b> de ${total}</span><div class="trilho"><i style="width:${Math.round(dia/total*100)}%"></i></div>
-    <span>${falta?`faltam <b style="color:${falta<=3?"var(--warn)":"#fff"}">${falta} dia${falta>1?"s":""}</b> para o fim do envio (30/10, 23h59)`:"<b>envio encerrado</b>"}</span>`;
+    <span>${falta?`faltam <b style="color:${falta<=3?"var(--warn)":"#fff"}">${falta} dia${falta>1?"s":""}</b> para o fim do envio (${new Date(fim-3*3600e3).toISOString().slice(0,10).split("-").reverse().slice(0,2).join("/")}, 23h59)`:"<b>envio encerrado</b>"}</span>`;
 }
 // ---------- PEDIDOS DE TESTE (demonstração) ----------
 const tagTeste=e=>e&&e.teste?`<span class="tag warn" style="margin-right:4px">🧪 TESTE</span>`:"";
