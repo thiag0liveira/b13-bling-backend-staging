@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>B13 — Conferência do lucro</title>
+<style>
+*{box-sizing:border-box;font-family:Arial,Helvetica,sans-serif;margin:0;padding:0}
+:root{--mag:#FF0082;--bg:#0f0d24;--card:#151233;--borda:#2c2660;--muted:#9a95c9;--ok:#3ce88a;--warn:#ffd23f;--ruim:#ff8aa3}
+body{background:var(--bg);color:#fff;min-height:100vh}
+.top{background:linear-gradient(180deg,#2b2870,#262366);border-bottom:3px solid var(--mag);padding:10px 16px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.top img{height:34px}.top .t{font-weight:900;font-size:16px}.top .sp{flex:1}
+.btn{border:none;border-radius:9px;font-weight:800;cursor:pointer;font-size:12.5px;padding:9px 13px;color:#fff;background:var(--mag);text-decoration:none}.btn-ghost{background:#1c1846;border:1px solid #3a3480}
+input[type=month]{background:#0d0b22;border:1px solid #3a3480;border-radius:9px;padding:9px;color:#fff;font-size:14px}
+.wrap{padding:14px;display:grid;gap:12px;max-width:1000px;margin:0 auto}
+.card{background:var(--card);border:1px solid var(--borda);border-radius:12px;padding:13px;min-width:0}.card h3{font-size:15px;margin-bottom:8px}
+.muted,.ic{color:var(--muted);font-size:12px;line-height:1.5}
+.concl{border-width:2px;font-size:14px;line-height:1.5}
+.lin{display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-top:1px solid #1d1946;font-size:13.5px}.lin.t{font-weight:900;border-top:2px solid #3a3480;font-size:15px}.lin .s{color:var(--muted);font-size:11.5px}
+.chk{border:1px solid var(--borda);border-left:5px solid #3a3480;border-radius:10px;padding:10px 12px;margin-bottom:9px;background:#120f2c}.chk.critico{border-left-color:#ff4d6d}.chk.atencao{border-left-color:var(--warn)}.chk.ok{border-left-color:var(--ok)}.chk.info{border-left-color:#5fb3ff}
+.chk .h{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.chk .h b{flex:1;font-size:14px;min-width:160px}.tag{display:inline-block;font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:6px;background:#2a2060;color:#c9b8ff}.tag.r{background:#4a1020;color:#ff8aa3}.tag.a{background:#3a2a0a;color:var(--warn)}.tag.v{background:#0d3a24;color:var(--ok)}
+.chk .e{font-size:13px;line-height:1.5;margin-top:4px}.chk ul{margin:6px 0 0 18px;font-size:12.5px;color:#cfcaf5;line-height:1.5}.chk .a{font-size:13px;margin-top:6px;color:#d9ffe9}
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}.kpi{background:#120f2c;border:1px solid var(--borda);border-radius:12px;padding:10px}.kpi .v{font-size:19px;font-weight:900}.kpi .l{font-size:10.5px;color:var(--muted);font-weight:700;text-transform:uppercase;margin-top:2px}
+</style>
+<script src="/nav.js"></script>
+</head>
+<body><script>
+  (function(){ if(!b13RequireLogin()) return; if(!b13BloquearSeSemAcesso("/resultado-confiavel")) return;
+    document.addEventListener("DOMContentLoaded",function(){ const nav=document.createElement("div"); nav.innerHTML=b13RenderNav("/resultado-confiavel"); document.body.insertBefore(nav,document.body.firstChild); }); })();
+</script>
+<div class="top"><img src="/logo"><div class="t">🧪 Conferência do lucro</div><div class="sp"></div><input type="month" id="mes"><button class="btn" onclick="carregar()">Conferir</button><a class="btn btn-ghost" href="/resultado">🗒️ Resultado (DRE)</a><button class="btn btn-ghost" onclick="baixarCsv()">⬇️ CSV</button></div>
+<div class="wrap" id="corpo"><div class="card muted">Carregando…</div></div>
+<script>
+const B = location.protocol.indexOf("http") === 0 ? "" : "https://app.b13bebidas.com.br";
+const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+function token() { try { return (b13GetSession() || {}).token || ""; } catch (e) { return ""; } }
+async function api(p) { try { const r = await fetch(B + p, { headers: { "X-Auth-Token": token() } }); const j = await r.json().catch(() => ({})); return r.ok ? j : { erro: j.erro || ("erro " + r.status) }; } catch (e) { return { erro: e.message }; } }
+const brl = n => n == null || isNaN(n) ? "—" : "R$ " + Number(n).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const NOMEMES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"], rotMes = m => NOMEMES[+m.slice(5) - 1] + " de " + m.slice(0, 4);
+const hojeBR = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
+function antes(m) { let [y, mo] = m.split("-").map(Number); mo--; if (mo === 0) { mo = 12; y--; } return y + "-" + String(mo).padStart(2, "0"); }
+{ const q = new URLSearchParams(location.search).get("mes"); document.getElementById("mes").value = /^\d{4}-\d{2}$/.test(q || "") ? q : antes(hojeBR().slice(0, 7)); }
+let D = null;
+async function carregar() { const m = document.getElementById("mes").value; if (!m) return; document.getElementById("corpo").innerHTML = `<div class="card muted">Conferindo ${rotMes(m)}… pode levar alguns segundos.</div>`; D = await api("/api/financeiro/confiabilidade?mes=" + m); if (D.erro) { document.getElementById("corpo").innerHTML = `<div class="card"><span style="color:#ff8aa3">${esc(D.erro)}</span></div>`; return; } render(); }
+function render() { const R = D.resultado, S = D.resumo, cor = S.criticos ? "#ff4d6d" : S.atencoes ? "#ffd23f" : "#3ce88a", lin = (r, v, cls, sub) => `<div class="lin ${cls || ""}"><span>${r}${sub ? `<div class="s">${sub}</div>` : ""}</span><span>${brl(v)}</span></div>`;
+  let h = `<div class="card concl" style="border-color:${cor}"><b style="color:${cor}">${S.criticos ? "🔴" : S.atencoes ? "🟡" : "🟢"} ${esc(S.conclusao)}</b><div class="ic" style="margin-top:6px">${rotMes(D.mes)}${D.emAndamento ? " (mês em andamento, ainda incompleto)" : ""} · ${S.criticos} ponto(s) crítico(s) · ${S.atencoes} para conferir · ${S.ok} em dia${S.valorEmRiscoMedido > 0 ? ` · cerca de <b style="color:#fff">${brl(S.valorEmRiscoMedido)}</b> de despesa ou custo que pode estar fora do lucro` : ""}</div></div>`;
+  h += `<div class="card"><h3>💰 Como o sistema chegou no lucro de ${rotMes(D.mes)}</h3>${lin("Receita (vendas do mês)", R.receita)}${lin("− Impostos sobre as vendas", R.deducoes)}${lin("= Receita líquida", R.receitaLiquida, "t")}${lin("− Custo das mercadorias vendidas", R.cmv, "", `custo de cada produto no dia da venda · ${R.coberturaCusto != null ? R.coberturaCusto + "% do faturamento com custo cadastrado" : ""}${R.cmvEstimado > 0 ? " · " + brl(R.cmvEstimado) + " estimado" : ""}`)}${lin("= Lucro bruto", R.lucroBruto, "t")}${lin("− Despesas variáveis (frete, comissão, taxas de cartão…)", R.despVariaveis)}${lin("− Despesas fixas (pessoal, aluguel, contas…)", R.despFixas)}${lin("= Resultado operacional", R.resultadoOperacional, "t")}${lin("− Depreciação (frota e ativos)", R.depreciacao)}${lin("− Despesas financeiras (juros, tarifas)", R.financeiro)}${lin("− IRPJ e CSLL" + (R.irEstimado ? " (estimado)" : ""), R.irpjCsll)}${lin("= Lucro líquido", R.lucroLiquido, "t")}<div class="ic" style="margin-top:6px">Margem líquida: <b style="color:#fff">${R.margemLiquidaPct != null ? String(R.margemLiquidaPct).replace(".", ",") + "%" : "—"}</b> da receita. Fora do lucro, de propósito: compras de mercadoria (${brl(R.compras)}, já entram pelo custo das vendas), compra de equipamentos e veículos (${brl(R.investimentos)}, entram pela depreciação) e retiradas, empréstimos e distribuição de lucros (${brl(R.foraResultado)}).</div></div>`;
+  h += `<div class="card"><h3>🔎 O que conferi</h3>` + D.checks.map(c => `<div class="chk ${c.nivel}"><div class="h"><b>${esc(c.titulo)}</b><span class="tag ${c.nivel === "critico" ? "r" : c.nivel === "atencao" ? "a" : c.nivel === "ok" ? "v" : ""}">${c.nivel === "critico" ? "crítico" : c.nivel === "atencao" ? "conferir" : c.nivel === "ok" ? "em dia" : "informação"}</span></div><div class="e">${esc(c.resumo)}</div>${c.itens && c.itens.length ? `<ul>${c.itens.map(i => `<li>${esc(i)}</li>`).join("")}</ul>` : ""}${c.valorEmRisco > 0 && c.nivel !== "ok" ? `<div class="ic" style="margin-top:4px">Valor envolvido: <b style="color:#fff">${brl(c.valorEmRisco)}</b>${c.afetaLucro ? "" : " (não muda o lucro, mas muda o caixa ou a dívida)"}</div>` : ""}${c.acao ? `<div class="a">➜ ${esc(c.acao)}${c.link ? ` <a href="${c.link}" style="color:#7fd0ff">abrir</a>` : ""}</div>` : ""}</div>`).join("") + `</div>`;
+  h += `<div class="card"><h3>ℹ️ O que este lucro é e o que não é</h3><div class="ic" style="white-space:normal;line-height:1.7">É o lucro contábil do mês (regime de competência): conta a venda quando ela acontece, e a despesa no mês a que pertence, mesmo que o dinheiro entre ou saia em outro dia. Ele só é "real" na medida em que todas as despesas do mês foram lançadas, por isso a lista acima mostra o que pode estar faltando. Não é o saldo dos bancos: dinheiro parado em estoque, compra de bens e empréstimos mexem no caixa sem mexer no lucro. O imposto sobre o lucro só é exato se lançado; a estimativa segue a regra do Lucro Real.</div></div>`;
+  document.getElementById("corpo").innerHTML = h; }
+function baixarCsv() { if (!D || D.erro) return; const q = x => `"${String(x == null ? "" : x).replace(/"/g, '""')}"`, n = x => x == null ? "" : String(Number(x).toFixed(2)).replace(".", ","), R = D.resultado, L = [];
+  L.push(["Resultado de " + D.mes, "Valor"].map(q).join(";")); [["Receita", R.receita], ["Impostos sobre vendas", R.deducoes], ["Receita líquida", R.receitaLiquida], ["Custo das mercadorias", R.cmv], ["Lucro bruto", R.lucroBruto], ["Despesas variáveis", R.despVariaveis], ["Despesas fixas", R.despFixas], ["Resultado operacional", R.resultadoOperacional], ["Depreciação", R.depreciacao], ["Financeiro", R.financeiro], ["IRPJ e CSLL", R.irpjCsll], ["Lucro líquido", R.lucroLiquido]].forEach(([a, b]) => L.push([q(a), n(b)].join(";")));
+  L.push("", ["Conferência", "Nível", "Resumo", "Valor envolvido", "Afeta o lucro", "Ação"].map(q).join(";")); D.checks.forEach(c => L.push([q(c.titulo), q(c.nivel), q(c.resumo), n(c.valorEmRisco), q(c.afetaLucro ? "sim" : "não"), q(c.acao)].join(";")));
+  const b = new Blob(["\ufeff" + L.join("\r\n")], { type: "text/csv;charset=utf-8" }), a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = "conferencia_lucro_" + D.mes + ".csv"; a.click(); }
+carregar();
+</script>
+</body>
+</html>
