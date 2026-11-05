@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>B13 — Preço do pedido x Bling</title>
+<style>
+*{box-sizing:border-box;font-family:Arial,Helvetica,sans-serif;margin:0;padding:0}
+:root{--mag:#FF0082;--bg:#0f0d24;--card:#151233;--borda:#2c2660;--muted:#9a95c9;--ok:#3ce88a;--warn:#ffd23f;--ruim:#ff8aa3}
+body{background:var(--bg);color:#fff;min-height:100vh}
+.top{background:linear-gradient(180deg,#2b2870,#262366);border-bottom:3px solid var(--mag);padding:10px 16px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.top img{height:34px}.top .t{font-weight:900;font-size:16px}.top .sp{flex:1}
+.btn{border:none;border-radius:9px;font-weight:800;cursor:pointer;font-size:12.5px;padding:9px 13px;color:#fff;background:var(--mag);text-decoration:none}.btn-ghost{background:#1c1846;border:1px solid #3a3480}
+select,input{background:#0d0b22;border:1px solid #3a3480;border-radius:9px;padding:9px;color:#fff;font-size:14px}
+.wrap{padding:14px;display:grid;gap:12px;max-width:1000px;margin:0 auto}
+.card{background:var(--card);border:1px solid var(--borda);border-radius:12px;padding:13px;min-width:0}.card h3{font-size:15px;margin-bottom:8px}
+.muted{color:var(--muted);font-size:12px;line-height:1.5}
+.ped{border:1px solid var(--borda);border-left:5px solid var(--warn);border-radius:10px;padding:10px;margin-bottom:8px;background:#120f2c}.ped.v{border-left-color:#ff4d6d}
+.ped .h{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center}
+table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}th{text-align:left;color:var(--muted);font-size:10.5px;text-transform:uppercase;padding:4px}td{padding:5px 4px;border-top:1px solid #1d1946}td.n,th.n{text-align:right;white-space:nowrap}
+.tag{display:inline-block;font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:6px;background:#2a2060;color:#c9b8ff}.tag.r{background:#4a1020;color:#ff8aa3}.tag.a{background:#3a2a0a;color:var(--warn)}
+</style>
+<script src="/nav.js"></script>
+</head>
+<body><script>
+  (function(){ if(!b13RequireLogin()) return; if(!b13BloquearSeSemAcesso("/auditoria-precos-pedidos")) return;
+    document.addEventListener("DOMContentLoaded",function(){ const nav=document.createElement("div"); nav.innerHTML=b13RenderNav("/auditoria-precos-pedidos"); document.body.insertBefore(nav,document.body.firstChild); }); })();
+</script>
+<div class="top"><img src="/logo"><div class="t">💲 Preço do pedido x Bling</div><div class="sp"></div><select id="dias" onchange="carregar()"><option value="3">3 dias</option><option value="7" selected>7 dias</option><option value="15">15 dias</option><option value="30">30 dias</option></select></div>
+<div class="wrap">
+ <div class="card"><div class="muted" style="white-space:normal">Lista os pedidos em que o preço que o sistema guardou (proposta de atacado ou caixa) é <b style="color:#fff">diferente do que o Bling tem</b>, ou em que o Bling está no <b style="color:#fff">preço de varejo</b> do cadastro mesmo havendo preço de atacado na tabela. A comparação usa a cópia local do Bling, atualizada pelos avisos do Bling. Para conferir um pedido <b style="color:#fff">ao vivo</b>, abra o diagnóstico: <span id="lnk"></span></div></div>
+ <div class="card"><h3 id="tit">Pedidos</h3><div id="lista" class="muted">Carregando…</div></div>
+</div>
+<script>
+const B = location.protocol.indexOf("http") === 0 ? "" : "https://app.b13bebidas.com.br";
+const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+function token() { try { return (b13GetSession() || {}).token || ""; } catch (e) { return ""; } }
+async function api(p) { try { const r = await fetch(B + p, { headers: { "X-Auth-Token": token() } }); const j = await r.json().catch(() => ({})); return r.ok ? j : { erro: j.erro || ("erro " + r.status) }; } catch (e) { return { erro: e.message }; } }
+const brl = n => n == null ? "—" : "R$ " + Number(n).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }), dmy = d => d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—";
+async function carregar() { document.getElementById("lista").innerHTML = "Carregando…"; const j = await api("/api/auditoria/precos-pedidos?dias=" + document.getElementById("dias").value); if (j.erro) { document.getElementById("lista").innerHTML = `<span style="color:#ff8aa3">${esc(j.erro)}</span>`; return; }
+  document.getElementById("tit").textContent = `Pedidos com preço diferente (${j.total})`;
+  document.getElementById("lista").innerHTML = j.pedidos.length ? j.pedidos.map(p => { const v = p.linhas.some(l => l.classificacao === "Bling no preço de varejo"); return `<div class="ped ${v ? "v" : ""}"><div class="h"><b>Pedido #${esc(p.numero || p.id)}</b><span><span class="tag">${esc(p.origem)}</span> ${v ? '<span class="tag r">Bling no varejo</span>' : '<span class="tag a">preço diferente</span>'}</span></div><div class="muted">${dmy(p.data)} · ${esc(p.cliente || "Consumidor final")} · <a href="/diag?api=${encodeURIComponent("/api/diag/pedido-preco?numero=" + (p.numero || ""))}" style="color:#7fd0ff">conferir ao vivo no Bling</a></div>
+    <table><tr><th>Produto</th><th class="n">No sistema</th><th class="n">No Bling</th><th class="n">Tabela atacado</th><th class="n">Varejo</th></tr>${p.linhas.map(l => `<tr><td>${esc(l.nome)}<div class="muted">${esc(l.classificacao)}</div></td><td class="n">${brl(l.noSistema)}</td><td class="n" style="color:${l.classificacao === "Bling no preço de varejo" ? "#ff8aa3" : "#fff"}">${brl(l.noBling)}</td><td class="n">${brl(l.tabelaAtacado)}</td><td class="n">${brl(l.varejoCadastro)}</td></tr>`).join("")}</table></div>`; }).join("") : `<div class="muted">Nenhum pedido com diferença de preço no período.</div>`; }
+document.getElementById("lnk").innerHTML = `<a href="/diag?api=${encodeURIComponent("/api/diag/pedido-preco?numero=NUMERO")}" style="color:#7fd0ff">/diag (troque NUMERO pelo número do pedido)</a>`;
+carregar();
+</script>
+</body>
+</html>

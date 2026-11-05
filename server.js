@@ -1321,6 +1321,7 @@ window.B13_NAV_LINKS=[
   {grupo:"GESTÃO",href:"/margem-bruta",label:"🪙 Margem Bruta",acoes:["acesso_margem_bruta"]},
     {grupo:"GESTÃO",href:"/resultado",label:"🗒️ Resultado (DRE)",acoes:["acesso_resultado"]},
   {grupo:"GESTÃO",href:"/resultado-confiavel",label:"🧪 Conferência do lucro",acoes:["acesso_resultado"]},
+  {grupo:"GESTÃO",href:"/auditoria-precos-pedidos",label:"💲 Preço do pedido x Bling",acoes:["acesso_produtos_gestao"]},
   {grupo:"GESTÃO",href:"/painel/estoque",label:"🏬 Dashboard de Estoque",acoes:["acesso_painel_estoque"]},
   {grupo:"GESTÃO",href:"/painel/valorestoque",label:"💎 Valor do Estoque",acoes:["acesso_painel_valorestoque"]},
   {grupo:"GESTÃO",href:"/painel/financeiro",label:"💹 Dashboard Financeiro",acoes:["acesso_painel_financeiro"]},
@@ -7062,7 +7063,7 @@ app.post("/api/pedidos/:id/editar-itens",async(req,res)=>{
       addLog(id,"itens_editados_apos_conferencia",null,funcionarioNome,{autorizadoPor:autorizadoPorStatus, situacao:nomeSituacao(_sitEd)});
     }
     let pedNovo;
-    let _ccP=null; try{ _ccP=await _conferirComRetentativa(id,itens,null,ped); pedNovo=_ccP?_ccP.chk:null; if(!pedNovo) pedNovo=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data); }catch(e){}
+    let _ccP=null; try{ _ccP=await _conferirComRetentativa(id,itens,()=>bling(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify(payload)}),ped); pedNovo=_ccP?_ccP.chk:null; if(!pedNovo) pedNovo=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data); }catch(e){}
     const novoTotal=+(pedNovo?.total||0);
     // o pedido acabou de ser lido do Bling já com a edição: atualiza a "foto" que a tela
     // de Pedidos usa e as listas por status em cache, pra o card mostrar na hora o
@@ -7081,7 +7082,7 @@ app.post("/api/pedidos/:id/editar-itens",async(req,res)=>{
       const conf=(_ccP&&_ccP.chk===pedNovo)?_ccP.conf:_conferirItensGravados(itens,pedNovo.itens);
       if(conf.equivalente) _avisarProdutosMesmoCodigo(conf,{pedidoId:String(id),numero:ped.numero,operador:funcionarioNome||"",origem:"Editar itens"});
       if(!conf.ok){
-        const dif=conf.dif, txt=dif.slice(0,6).map(d=>`${d.nome}: pedido ${d.pedido}, no Bling ${d.noBling}`).join("; "), rev=await _reverterItensBling(id,ped,funcionarioNome||"","Editar itens"), dg=_textoDiag(_ccP&&_ccP.diag); _registrarFalhaItens({pedidoId:String(id),numero:ped.numero,origem:"Editar itens",por:funcionarioNome||"",dif,diag:_ccP&&_ccP.diag,devolvido:rev.ok});
+        const dif=conf.dif, txt=dif.slice(0,6).map(d=>d.texto||`${d.nome}: pedido ${d.pedido}, no Bling ${d.noBling}`).join("; "), rev=await _reverterItensBling(id,ped,funcionarioNome||"","Editar itens"), dg=_textoDiag(_ccP&&_ccP.diag); _registrarFalhaItens({pedidoId:String(id),numero:ped.numero,origem:"Editar itens",por:funcionarioNome||"",dif,diag:_ccP&&_ccP.diag,devolvido:rev.ok});
         try{ addLog(String(id),"itens_nao_gravados_bling",null,funcionarioNome||"",{diferencas:dif.slice(0,10),devolvido:rev.ok}); registrarAviso({tipo:"itens_nao_gravados_bling",titulo:rev.ok?`Pedido #${ped.numero||id}: o Bling NÃO gravou os itens da edição (devolvi o pedido ao que era)`:`URGENTE · Pedido #${ped.numero||id}: o Bling gravou itens errados e não consegui devolver`,pedidoId:String(id),numero:ped.numero,operador:funcionarioNome||"",origem:"Editar itens",fingerprint:`naogravou-${id}-${Date.now()}`,oQueFazer:`O Bling respondeu que salvou, mas os itens ficaram diferentes do pedido: ${txt}. ${rev.ok?"O pedido foi devolvido ao que era antes e conferido no Bling.":"NÃO consegui devolver o pedido ao que era ("+(rev.erro||"erro")+"). Abra o pedido no Bling e corrija os itens agora."} Nada foi registrado como alterado no sistema. ${dg}`}); }catch(e){}
         return res.status(502).json({erro:`O Bling respondeu que salvou, mas os itens NÃO ficaram como você pediu (${txt}). ${rev.ok?"Devolvi o pedido ao que era antes e conferi no Bling. Tente de novo.":"ATENÇÃO: não consegui devolver o pedido ao que era. Abra o pedido no Bling e corrija os itens agora."} Nada foi registrado como alterado. ${dg}`.trim(),divergencia:dif,devolvido:rev.ok,diagnostico:_ccP&&_ccP.diag,situacaoNoBling:nomeSituacao(Number(pedNovo.situacao?.id||0))}); }
     }
@@ -8018,7 +8019,7 @@ app.post("/api/caixa-atacado/editar-pagamento",async(req,res)=>{
           const conf=_cc?_cc.conf:_conferirItensGravados(itensNovos,chk.itens);
           if(conf.equivalente) _avisarProdutosMesmoCodigo(conf,{pedidoId:idStr,numero:numero||ped.numero,operador:funcsNome,origem:"Caixa Atacado (reabertura)"});
           if(!conf.ok){
-            const dif=conf.dif.map(d=>`${d.nome}: pedido ${d.pedido}, no Bling ${d.noBling}`), rev=await _reverterItensBling(pedidoId,ped,funcsNome,"Caixa Atacado (reabertura)"), dg=_textoDiag(_cc&&_cc.diag);
+            const dif=conf.dif.map(d=>d.texto||`${d.nome}: pedido ${d.pedido}, no Bling ${d.noBling}`), rev=await _reverterItensBling(pedidoId,ped,funcsNome,"Caixa Atacado (reabertura)"), dg=_textoDiag(_cc&&_cc.diag);
             _registrarFalhaItens({pedidoId:idStr,numero:numero||ped.numero,origem:"Caixa Atacado (reabertura)",por:funcsNome,dif:conf.dif,diag:_cc&&_cc.diag,devolvido:rev.ok});
             try{ addLog(idStr,"itens_nao_gravados_bling",funcionarioId,funcsNome,{diferencas:conf.dif.slice(0,10),origem:"Caixa Atacado (reabertura)",devolvido:rev.ok}); registrarAviso({tipo:"itens_nao_gravados_bling",titulo:rev.ok?`Pedido #${numero||ped.numero}: o Bling NÃO gravou os itens da reabertura (devolvi o pedido ao que era)`:`URGENTE · Pedido #${numero||ped.numero}: o Bling gravou itens errados e não consegui devolver`,pedidoId:idStr,numero:numero||ped.numero,operador:funcsNome,origem:"Caixa Atacado (reabertura)",fingerprint:`naogravou-${idStr}-${Date.now()}`,oQueFazer:`O Bling respondeu que salvou, mas os itens ficaram diferentes do pedido (${dif.slice(0,4).join("; ")}). ${rev.ok?"O pedido foi devolvido ao que era antes e conferido no Bling.":"NÃO consegui devolver o pedido ao que era ("+(rev.erro||"erro")+"). Abra o pedido no Bling e corrija os itens agora."} Nada foi registrado no caixa nem no pagamento. ${dg}`}); }catch(e){}
             return res.status(502).json({erro:`O Bling respondeu que salvou, mas, mesmo depois de reler e gravar de novo, os itens NÃO ficaram como você pediu (${dif.slice(0,4).join("; ")}). ${rev.ok?"Devolvi o pedido ao que era antes e conferi no Bling. ":"ATENÇÃO: não consegui devolver o pedido ao que era. Abra o pedido no Bling e corrija os itens agora. "}Nada foi registrado no caixa nem no pagamento. ${rev.ok?"Tente de novo. ":""}${dg}`.trim(),divergencia:dif,devolvido:rev.ok,diagnostico:_cc&&_cc.diag});
@@ -14035,6 +14036,31 @@ function _confiabilidadeResultado(mes){
     resumo:{criticos:c("critico"),atencoes:c("atencao"),ok:c("ok"),valorEmRiscoMedido:risco,conclusao:concl},checks}; }
 app.get("/api/financeiro/confiabilidade",requireAcesso("acesso_resultado"),(req,res)=>{ try{ const mes=/^\d{4}-\d{2}$/.test(String(req.query.mes||""))?req.query.mes:_diaBRk(Date.now()).slice(0,7); res.json(_confiabilidadeResultado(mes)); }catch(e){ res.status(500).json({erro:e.message}); } });
 app.get("/resultado-confiavel",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"resultado-confiavel.html")); });
+// ===================== PREÇO DO PEDIDO: o que cada fonte tem (Bling ao vivo, proposta, caixa, cópia local) contra a tabela de atacado e o varejo do cadastro =====================
+function _fontesPrecoPedido(id,live){ const fonte={}, add=(nome,lista)=>{ (lista||[]).forEach(i=>{ const k=String(i.produtoId||(i.produto&&i.produto.id)||""); if(!k) return; const m=(fonte[k]||(fonte[k]={})), x=m[nome]||(m[nome]={q:0,t:0}), q=Number(i.quantidade)||0, v=Number(i.valor)||0; x.q+=q; x.t+=q*v; }); };
+  if(live) add("bling",(live.itens||[]).map(i=>({produtoId:i.produto&&i.produto.id,quantidade:i.quantidade,valor:i.valor})));
+  const prop=Object.values(lerPropostas()||{}).find(p=>String(p&&p.pedidoBlingId)===String(id)); if(prop) add("proposta",prop.itens);
+  let mov=null; (lerCaixaSessoes().sessoes||[]).forEach(sx=>(sx.movimentos||[]).forEach(m=>{ if(m.tipo==="venda"&&!m.cancelado&&String(m.pedidoId)===String(id)) mov=m; })); if(mov){ add("caixa",mov.itens); if(mov.itensOriginais) add("caixaAntesDaEdicao",mov.itensOriginais); }
+  const det=lerDetPedidos().porId[String(id)]; if(det) add("copiaLocalDoBling",(det.i||[]).map(x=>({produtoId:x[0],quantidade:x[1],valor:x[2]})));
+  return {fonte,prop,mov,det}; }
+function _linhasPrecoPedido(F,chaveBling){ const P=lerProdutosBling().porId, idx=_indicePrecosTabela(), un=o=>o&&o.q>0?_round2(o.t/o.q):null;
+  return Object.keys(F.fonte).map(k=>{ const p=P[k]||{}, cod=String(p.c||""), vinc=(cod&&idx.porCodigo[cod])||idx.porNome[String(p.n||"").toLowerCase().trim()]||null, atac=vinc&&vinc.precoAtacado!=null?Number(vinc.precoAtacado):null, varejo=Number(p.p)||null, precos={};
+    Object.entries(F.fonte[k]).forEach(([n,o])=>precos[n]=un(o)); const b=precos[chaveBling], sis=precos.proposta!=null?precos.proposta:(precos.caixa!=null?precos.caixa:null); let cls="";
+    if(b!=null){ if(varejo&&Math.abs(b-varejo)<0.02&&!(atac!=null&&Math.abs(b-atac)<0.02)) cls="varejo"; else if(atac!=null&&Math.abs(b-atac)<0.02) cls="atacado"; else cls="outro"; }
+    const dif=Object.entries(precos).filter(([n,v])=>n!==chaveBling&&n!=="caixaAntesDaEdicao"&&v!=null&&b!=null&&Math.abs(v-b)>0.02).map(([n,v])=>`${n}: R$ ${v}`);
+    return {produtoId:k,nome:p.n||"",codigo:cod,precos,tabelaAtacado:atac,varejoCadastro:varejo,classificacao:cls,sistema:sis,bling:b,diferemDoBling:dif}; }); }
+app.get("/api/diag/pedido-preco",requireAcesso("acesso_produtos_gestao"),async(req,res)=>{ try{ const num=String(req.query.numero||"").replace(/\D/g,""); let id=String(req.query.id||"").replace(/\D/g,"");
+  if(!id&&num){ const r=Object.values(_indicePedidos().porId).find(x=>String(x.numero)===num); id=r?String(r.id):""; if(!id){ const l=await bling(`/pedidos/vendas?numero=${num}`); id=String(((l&&l.data)||[]).find(x=>String(x.numero)===num)?.id||""); } }
+  if(!id) return res.status(404).json({erro:"pedido não encontrado"}); let live=null; try{ live=(await bling(`/pedidos/vendas/${id}`)).data; }catch(e){}
+  const F=_fontesPrecoPedido(id,live), linhas=_linhasPrecoPedido(F,"bling"), NOMES={varejo:"Bling está no preço de VAREJO do cadastro",atacado:"Bling está no preço de atacado da tabela",outro:"Bling com preço diferente da tabela e do varejo (negociado ou editado)"};
+  const eventos=((lerLog()[id])||[]).filter(e=>/item|preco|criado|gerado|editad|alter|situacao|estorno|pagamento/i.test(e.evento||"")).slice(-30).map(e=>({quando:new Date((e.em||0)-3*3600e3).toISOString().replace("T"," ").slice(0,19),evento:e.evento,quem:e.funcionarioNome||"",detalhes:JSON.stringify(e.detalhes||{}).slice(0,220)}));
+  res.json({ok:true,id,numero:(live&&live.numero)||num,situacao:live&&live.situacao,fontes:{bling:!!live,proposta:!!F.prop,caixa:!!F.mov,copiaLocalDoBling:!!F.det},resumo:{noPrecoDeVarejo:linhas.filter(l=>l.classificacao==="varejo").length,divergentesEntreFontes:linhas.filter(l=>l.diferemDoBling.length).length,produtos:linhas.length},linhas:linhas.map(l=>({...l,classificacao:NOMES[l.classificacao]||""})),eventos}); }catch(e){ res.status(500).json({erro:e.message}); } });
+function _listarAuditoriaPrecos(q){ const ehDia=x=>/^\d{4}-\d{2}-\d{2}$/.test(String(x||"")), dias=Math.min(60,Math.max(1,Number(q.dias)||7)), fim=ehDia(q.fim)?q.fim:_diaBRk(Date.now()), ini=ehDia(q.ini)?q.ini:_diaBRk(Date.parse(fim+"T12:00:00-03:00")-(dias-1)*86400000), out=[];
+  (_filtrarPedidos({ini,fim}).L||[]).forEach(r=>{ const F=_fontesPrecoPedido(r.id,null); if(!(F.prop||F.mov)||!F.det) return; const linhas=_linhasPrecoPedido(F,"copiaLocalDoBling").filter(l=>l.sistema!=null&&l.bling!=null&&(Math.abs(l.sistema-l.bling)>0.02||l.classificacao==="varejo"&&l.tabelaAtacado!=null));
+    if(linhas.length) out.push({id:String(r.id),numero:r.numero,data:r.data,cliente:r.cliente||"",origem:F.prop?"proposta de atacado":"caixa",linhas:linhas.map(l=>({produtoId:l.produtoId,nome:l.nome,noSistema:l.sistema,noBling:l.bling,tabelaAtacado:l.tabelaAtacado,varejoCadastro:l.varejoCadastro,classificacao:l.classificacao==="varejo"?"Bling no preço de varejo":(l.classificacao==="atacado"?"Bling no atacado":"Bling diferente")}))}); });
+  out.sort((a,b)=>String(b.data).localeCompare(String(a.data))); return {ini,fim,pedidos:out,total:out.length}; }
+app.get("/api/auditoria/precos-pedidos",requireAcesso("acesso_produtos_gestao"),(req,res)=>{ try{ res.json({ok:true,..._listarAuditoriaPrecos(req.query),nota:"Compara o preço que o sistema guardou (proposta ou caixa) com a cópia local do Bling (atualizada pelos avisos do Bling). Para conferir um pedido ao vivo no Bling, abra /diag com /api/diag/pedido-preco?numero=NÚMERO."}); }catch(e){ res.status(500).json({erro:e.message}); } });
+app.get("/auditoria-precos-pedidos",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"auditoria-precos-pedidos.html")); });
 // ===================== VENDA ABAIXO DO CUSTO =====================
 // Confere QUALQUER pedido (atacado, varejo, feito no sistema ou só no Bling): se algum item foi vendido por menos do que o custo cadastrado do produto, gera aviso e registra o prejuízo.
 // Quando confere: a cada aviso do Bling de pedido novo/alterado (webhook) e numa varredura periódica dos últimos dias (pega o que o aviso perder, ou se os avisos estiverem parados).
@@ -15324,7 +15350,10 @@ async function _precoAtualProduto0(produtoId,opc){ const id=String(produtoId), v
   if(pb==null){ const c=_precoConfirmado.get(id); pb=(c&&Date.now()-c.em<PRECO_CONFIRMA_TTL&&c.preco>0)?c.preco:(Number(P0.p)>0?Number(P0.p):null); }
   return {produtoId:id,nome,preco:atac!=null?atac:(pb||0),origem:atac!=null?"atacado":"bling",precoAtacado:atac,precoBling:pb,aoVivo}; }
 // itens NOVOS de uma edição (a tela manda novo:true) são repreçados com o preço atual, para não entrarem com o valor antigo; devolve o que mudou
-async function _corrigirPrecosNovos(itens){ const mudou=[]; for(const i of (itens||[])){ if(!i||i.novo!==true||!i.produtoId) continue; try{ const r=await _precoAtualProduto(i.produtoId,{vivo:true,modo:i.modoPreco==="varejo"?"varejo":"atacado"}); if(r.preco>0&&Math.abs(r.preco-Number(i.valor))>0.004){ mudou.push({produtoId:i.produtoId,nome:i.nome||r.nome,de:Number(i.valor)||0,para:r.preco}); i.valor=r.preco; } }catch(e){} } return mudou; }
+async function _corrigirPrecosNovos(itens){ const mudou=[]; for(const i of (itens||[])){ if(!i||i.novo!==true||!i.produtoId) continue; if(i.precoEditado===true||i.modoPreco==="editado") continue; try{ const modo=i.modoPreco==="varejo"?"varejo":"atacado", r=await _precoAtualProduto(i.produtoId,{vivo:true,modo});
+   // pedido de ATACADO: se o produto não tem preço na tabela de atacado, o "preço atual" seria o de VAREJO do cadastro; isso não pode trocar o preço que a tela mostrou
+   if(modo==="atacado"&&r.origem!=="atacado"&&!r.promocao){ i.avisoSemTabela=true; continue; }
+   if(r.preco>0&&Math.abs(r.preco-Number(i.valor))>0.004){ mudou.push({produtoId:i.produtoId,nome:i.nome||r.nome,de:Number(i.valor)||0,para:r.preco}); i.valor=r.preco; } }catch(e){} } return mudou; }
 app.get("/api/atacado/preco-produto",async(req,res)=>{ try{ const id=String(req.query.produtoId||"").replace(/\D/g,""); if(!id) return res.status(400).json({erro:"informe ?produtoId="}); res.json({ok:true,...(await _precoAtualProduto(id,{vivo:true}))}); }catch(e){ res.status(500).json({erro:e.message}); } });
 app.get("/api/buscar-atacado", async (req, res) => {
   try {
@@ -15363,8 +15392,8 @@ app.get("/api/buscar-atacado", async (req, res) => {
       return !vinc?.desabilitado;
     });
     lista.forEach(p => {
-      const vinc = idxTabela.porCodigo[String(p.codigo)];
-      const atacado = vinc?.precoAtacado;
+ const _cP=String((lerProdutosBling().porId[String(p.id)]||{}).c||""), vinc = idxTabela.porCodigo[String(p.codigo)]||(_cP&&idxTabela.porCodigo[_cP])||idxTabela.porNome[String(p.nome||"").toLowerCase().trim()];
+ const atacado = vinc?.precoAtacado;
       p.precoAtacado = (atacado != null) ? atacado : null;
       p.categoria = vinc?.categoria || null; // categoria da tabela, pra distinguir formatos do mesmo produto na proposta
       p.preco = (atacado != null) ? atacado : (p.precoBling ?? 0);
@@ -15458,8 +15487,12 @@ function _conferirItensGravados(esperados,gravados){
   const soma=(l,chave)=>{ const m={}; (l||[]).forEach(i=>{ const k=chave(i); if(!k) return; m[k]=_round2((m[k]||0)+(Number(i.quantidade)||0)); }); return m; };
   const igual=(a,b)=>{ for(const k of new Set([...Object.keys(a),...Object.keys(b)])) if(Math.abs((a[k]||0)-(b[k]||0))>0.0005) return false; return true; };
   const nomeDe={}; (gravados||[]).forEach(i=>{ const k=idDe(i); if(k&&!nomeDe[k]) nomeDe[k]=i.descricao||""; }); (esperados||[]).forEach(i=>{ const k=idDe(i); if(k&&(i.nome||i.descricao)) nomeDe[k]=i.nome||i.descricao; }); Object.keys(nomeDe).forEach(k=>{ if(!nomeDe[k]) nomeDe[k]=(P[k]||{}).n||""; });
-  const E=soma(esperados,idDe), G=soma(gravados,idDe);
-  if(igual(E,G)) return {ok:true,equivalente:false,dif:[],nomeDe};
+    const E=soma(esperados,idDe), G=soma(gravados,idDe);
+  if(igual(E,G)){ // quantidades iguais: confere o preço unitário médio de cada produto (o Bling pode regravar com o preço de varejo do cadastro)
+    const din=(l)=>{ const m={}; (l||[]).forEach(i=>{ const k=idDe(i), v=Number(i.valor), q=Number(i.quantidade)||0; if(!k||!isFinite(v)||!(v>0)||!(q>0)) return; const x=m[k]||(m[k]={q:0,t:0}); x.q+=q; x.t+=q*v; }); return m; }, DE=din(esperados), DG=din(gravados), difP=[];
+    Object.keys(DE).forEach(k=>{ const g=DG[k]; if(!g) return; const ue=DE[k].t/DE[k].q, ug=g.t/g.q; if(Math.abs(ue-ug)>0.02) difP.push({produtoId:k,nome:nomeDe[k]||(P[k]||{}).n||("produto "+k),pedido:_round2(ue),noBling:_round2(ug),preco:true,texto:`${nomeDe[k]||(P[k]||{}).n||("produto "+k)}: PREÇO no pedido R$ ${ue.toFixed(2).replace(".",",")}, no Bling R$ ${ug.toFixed(2).replace(".",",")}`}); });
+    if(difP.length) return {ok:false,equivalente:false,dif:difP,nomeDe,so_preco:true};
+    return {ok:true,equivalente:false,dif:[],nomeDe}; }
   const cod=i=>{ const k=idDe(i), c=String((i&&i.codigo)||(P[k]||{}).c||"").trim().toLowerCase(); return c?"c:"+c:""; };
   const todos=(l,f)=>(l||[]).every(i=>f(i));
   const pares=()=>({faltam:Object.keys(E).filter(k=>!(k in G)),sobram:Object.keys(G).filter(k=>!(k in E)||G[k]>(E[k]||0)+0.0005)});
@@ -15495,6 +15528,16 @@ async function _reverterItensBling(pedidoId,pedOriginal,quem,origem){
     const cc=await _conferirComRetentativa(pedidoId,orig,null), conf=cc?cc.conf:null;
     const ok=!!(r&&r.ok)&&!!(conf&&conf.ok); try{ addLog(String(pedidoId),ok?"itens_devolvidos_apos_falha_bling":"itens_devolucao_falhou",null,quem||"",{origem:origem||"",erro:(r&&r.erro)||null}); }catch(e){}
     return {ok,erro:(r&&r.erro)||(conf&&!conf.ok?"o Bling não confirmou os itens originais":null)}; }catch(e){ return {ok:false,erro:e.message}; } }
+// Depois de criar o pedido no Bling, confere se cada produto ficou com o PREÇO da proposta; se o Bling regravou com outro preço (por exemplo o de varejo do cadastro), corrige uma vez e confere de novo.
+async function _conferirPrecosPedidoCriado(pedidoId,esperados,numero,quem){
+  const cc=await _conferirComRetentativa(pedidoId,esperados,null,null); if(!cc) return {ok:null}; if(cc.chk&&cc.chk.numero) numero=cc.chk.numero;
+  if(cc.conf.ok||!cc.conf.so_preco) return {ok:!!cc.conf.ok};
+  const dif0=cc.conf.dif.map(d=>d.texto||d.nome).slice(0,6);
+  try{ await atualizarItensBling(pedidoId,esperados.map(i=>({produtoId:i.produtoId,nome:i.nome,quantidade:i.quantidade,valor:i.valor})),"[preços reaplicados pelo sistema]"); }catch(e){}
+  const c2=await _conferirComRetentativa(pedidoId,esperados,null,null); if(c2&&c2.conf.ok){ try{ addLog(String(pedidoId),"preco_bling_corrigido",null,quem||"",{diferencas:dif0}); }catch(e){} return {ok:true,corrigido:true}; }
+  const dif=(c2&&c2.conf&&c2.conf.dif?c2.conf.dif:cc.conf.dif).map(d=>d.texto||d.nome).slice(0,6);
+  try{ registrarAviso({tipo:"preco_bling_diferente",titulo:`URGENTE · Pedido #${numero}: o Bling gravou preço diferente do pedido`,pedidoId:String(pedidoId),numero,operador:quem||"",origem:"Gerar pedido de atacado",fingerprint:`precobling-${pedidoId}`,oQueFazer:`O Bling ficou com preço diferente do combinado (${dif.join("; ")}). O sistema tentou reaplicar os preços e não adiantou. Abra o pedido no Bling e corrija os valores, ou use Editar itens. Para ver cada fonte: /diag?api=%2Fapi%2Fdiag%2Fpedido-preco%3Fnumero%3D${numero}`}); }catch(e){}
+  return {ok:false,aviso:`O Bling gravou preço diferente do pedido (${dif.join("; ")}). Confira o pedido #${numero} no Bling antes de seguir.`}; }
 async function atualizarItensBling(id,itens,obsExtra,opts={}){
   try{
     // opts.ped: pedido já lido pelo chamador (evita 1 GET). opts.parcelas: [{formaId,valor}]
@@ -22569,7 +22612,8 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
         if(!rParc?.ok) console.error("[atacado] gerar-pedido: não consegui gravar a parcela Ficha Financeira após criar o pedido",pedidoId,rParc?.erro);
       }catch(e){ console.error("[atacado] gerar-pedido: erro ao gravar parcela após criar:",e.message); }
     }
-    // GRAVA O VÍNCULO NA HORA, logo após o Bling responder. Antes isso só acontecia no
+      let avisoPreco=""; try{ const rp=await _conferirPrecosPedidoCriado(pedidoId,prop.itens.map(i=>({produtoId:i.produtoId,nome:i.nome,quantidade:Number(i.quantidade),valor:Number(i.valor)})),numero||pedidoId,prop.funcionarioNome||""); if(rp&&rp.aviso) avisoPreco=rp.aviso; }catch(e){ console.error("[preco pedido criado]",e.message); }
+  // GRAVA O VÍNCULO NA HORA, logo após o Bling responder. Antes isso só acontecia no
     // fim do fluxo (depois de até 3 tentativas de mudar a situação, ~2s ou mais), e
     // nessa janela a rotina de sincronização podia varrer o Bling, não achar o vínculo
     // e criar um registro duplicado "ped-<id>" com origem bling — foi o que aconteceu
@@ -22672,7 +22716,7 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
       })();
     }
     res.json({ok:true,pedidoId,numero,numeroConfirmado:numeroVeioDoBling,agendadoRotaData,
-      autorizadoPorEstoque, itensSemEstoque: autorizadoPorEstoque?semEstoque:undefined});
+ autorizadoPorEstoque, itensSemEstoque: autorizadoPorEstoque?semEstoque:undefined, avisoPreco:avisoPreco||undefined});
   }catch(e){
     try{ const pp=lerPropostas(); if(pp[req.params.id]){ pp[req.params.id].gerandoPedidoEm=null; salvarPropostas(pp); } }catch(e2){}
     res.status(e.status||500).json({erro:e.message,body:e.body});

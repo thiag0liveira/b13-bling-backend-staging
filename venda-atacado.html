@@ -1513,6 +1513,7 @@ async function salvar() {
         S.msg = "⚠️ Salvo, mas não gerou o pedido: " + g.erro;
         return;
       }
+      if (g.avisoPreco) alert("⚠️ " + g.avisoPreco);
       // A janela de impressão JÁ está aberta (abri no clique), então dá pra esperar o
       // NÚMERO REAL do pedido sem risco de o navegador bloquear o popup. Sem isso, a
       // nota saía com o ID interno gigante (#26816688585) em vez do número (#54894).
