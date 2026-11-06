@@ -12293,7 +12293,7 @@ function _montarPainelGrupo(g){
       kpi(brlN(v),"Perdas no mês",`${q} ocorrência(s)`,"/perdas",v>0?"alerta":""); });
   }
   if(g==="financeiro"){
-    seg(()=>{ const T=lerContasPagar().titulos, ab=T.filter(t=>t.status!=="pago"), venc=ab.filter(t=>t.vencimento<hoje), sete=ab.filter(t=>t.vencimento>=hoje&&t.vencimento<=d(-7)), pagM=T.filter(t=>t.status==="pago"&&(t.pagoEm||0)>=Date.parse(iniMes+"T00:00:00-03:00")), soma=l=>brlN(l.reduce((a,t)=>a+(Number(t.valor)||0),0));
+    seg(()=>{ const T=lerContasPagar().titulos, ab=T.filter(t=>t.status!=="pago"), venc=ab.filter(t=>t.vencimento<hoje), sete=ab.filter(t=>t.vencimento>=hoje&&t.vencimento<=d(-7)), pagM=T.filter(t=>t.status==="pago"&&(t.pagoEm||0)>=Date.parse(iniMes+"T00:00:00-03:00")), soma=l=>brlN(l.reduce((a,t)=>a+_restante(t),0));
       kpi(soma(ab),"Contas a pagar em aberto",`${ab.length} título(s)`,"/contas-pagar",""); kpi(soma(venc),"Vencidas",`${venc.length} título(s)`,"/contas-pagar",venc.length?"alerta":"");
       kpi(soma(sete),"Vencem em 7 dias",`${sete.length} título(s)`,"/entrada-nota"); kpi(soma(pagM),"Pagas no mês",`${pagM.length} título(s)`,"/entrada-nota");
       if(venc.length) al("alto",`${venc.length} conta(s) a pagar vencida(s): ${soma(venc)}`,"/entrada-nota");
@@ -13412,10 +13412,18 @@ function _importarLancamentosConhecidos(){ try{ for(const arq of fs.readdirSync(
     (L.recorrentes||[]).forEach(r=>(r.pagarCompetencias||[]).forEach(cp=>{ const t=C.titulos.find(x=>x.recorrenteId===r.id&&x.competencia===cp); if(t&&t.status!=="pago") Object.assign(t,{status:"pago",pagoEm:Date.parse(t.vencimento+"T12:00:00-03:00"),dataPagamento:t.vencimento,forma:"não informada",banco:"",valorPago:t.valor,pagoPor:"importação"}); }));
     C.importados.push(L.id); salvarJSON(CONTAS_PAGAR_FILE,C); console.log("[contas-pagar] importados",(L.itens||[]).length,"lançamentos e",(L.recorrentes||[]).length,"despesas fixas de",arq); } }catch(e){ console.error("[contas-pagar] importação:",e.message); } }
 setTimeout(_importarLancamentosConhecidos,15000);
+// ===== PAGAMENTO PARCIAL: a conta guarda a lista de pagamentos (data, valor, forma, banco); fica "parcial" até a soma chegar ao valor, então "pago" =====
+function _pagamentosDe(t){ if(Array.isArray(t.pagamentos)&&t.pagamentos.length) return t.pagamentos; if(t.status==="pago") return [{id:"p0",data:t.dataPagamento||(t.pagoEm?_diaBRk(t.pagoEm):String(t.vencimento||"")),em:t.pagoEm||0,valor:Number(t.valorPago!=null?t.valorPago:t.valor)||0,forma:t.forma||"",banco:t.banco||"",por:t.pagoPor||"",obs:t.observacaoPagamento||"",sangria:t.sangria||null,legado:true}]; return []; }
+const _pagoAcum=t=>_round2(_pagamentosDe(t).reduce((a,p)=>a+(Number(p.valor)||0),0));
+const _restante=t=>t.status==="pago"||t.status==="cancelado"?0:Math.max(0,_round2((Number(t.valor)||0)-_pagoAcum(t)));
+function _sincronizarPagamentos(t){ const P=Array.isArray(t.pagamentos)?t.pagamentos:_pagamentosDe(t); if(!P.length){ ["pagoEm","dataPagamento","forma","banco","valorPago","pagoPor","observacaoPagamento"].forEach(k=>delete t[k]); delete t.pagamentos; t.status="aberto"; return; }
+  const ac=_round2(P.reduce((a,p)=>a+(Number(p.valor)||0),0)), u=[...P].sort((a,b)=>(a.em||0)-(b.em||0)).pop(); t.status=ac>=(Number(t.valor)||0)-0.009?"pago":"parcial"; Object.assign(t,{pagoEm:u.em,dataPagamento:u.data,forma:u.forma,banco:u.banco,valorPago:ac,pagoPor:u.por,observacaoPagamento:u.obs||""}); }
+function _cancelarSangriaPagamento(p,quem){ if(!p||!p.sangria) return null; const d=lerCaixaSessoes(), sx=(d.sessoes||[]).find(x=>x.id===p.sangria.sessaoId), m=sx&&(sx.movimentos||[]).find(x=>x.tipo==="sangria"&&Number(x.em)===Number(p.sangria.em)); if(m&&!m.cancelado){ if(sx.fechadaEm) return "o caixa onde saiu o dinheiro já foi fechado: acerte pela Gestão de Caixas"; m.cancelado=true; m.canceladoMotivo="pagamento desfeito em Contas a Pagar"; m.canceladoPor=quem; salvarCaixaSessoes(d); } return null; }
 app.get("/api/contas-pagar",requireAcesso("acesso_contas_pagar"),(req,res)=>{
   try{ const C=_gerarRecorrentes(lerContasPagar()), q=req.query, h=_diaBRk(Date.now()), d7=_diaBRk(Date.now()+7*_DIA), iniM=Date.parse(h.slice(0,8)+"01T00:00:00-03:00");
     const nrm=x=>String(x||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase(), busca=nrm(q.busca||"");
     const T=C.titulos.map(t=>({...t,categoria:_contaDoPlano(t.categoria||(t.origem==="nota"?"Fornecedores (mercadoria)":"Outros")).rotulo,competenciaTxt:(()=>{ const c=_competenciaDoTitulo(t); return c.meses>1?`${c.ini} (÷${c.meses} meses)`:c.ini; })(),descricao:t.descricao||(t.numeroNota?`${t.origem==="boleto"?"Boleto":"NF"} ${t.numeroNota}`:(t.origem==="boleto"?"Boleto":"Compra")),
+      pagoAcum:_pagoAcum(t),restante:_restante(t),parcial:t.status==="parcial",pagamentosLista:Array.isArray(t.pagamentos)?t.pagamentos:undefined,
       situacao:t.status==="cancelado"?"cancelada":t.status==="pago"?"paga":t.vencimento<h?"vencida":t.vencimento<=d7?"vence logo":"aberta"}));
     const st=String(q.situacao||"abertas");
     const L=T.filter(t=>{ if(st==="abertas"&&!["aberta","vencida","vence logo"].includes(t.situacao)) return false; if(st==="vencidas"&&t.situacao!=="vencida") return false; if(st==="semana"&&!["vencida","vence logo"].includes(t.situacao)) return false;
@@ -13423,11 +13431,11 @@ app.get("/api/contas-pagar",requireAcesso("acesso_contas_pagar"),(req,res)=>{
         if(q.de&&t.vencimento<q.de) return false; if(q.ate&&t.vencimento>q.ate) return false; if(q.categoria&&t.categoria!==q.categoria) return false;
         if(busca&&!(nrm(t.fornecedor?.nome).includes(busca)||nrm(t.descricao).includes(busca)||String(t.numeroNota||"").includes(busca))) return false; return true; })
       .sort((a,b)=>st==="pagas"?(b.pagoEm||0)-(a.pagoEm||0):String(a.vencimento).localeCompare(String(b.vencimento)));
-    const ab=T.filter(t=>["aberta","vencida","vence logo"].includes(t.situacao)), soma=l=>_round2(l.reduce((a,t)=>a+(Number(t.valor)||0),0));
-    const pm=T.filter(t=>t.situacao==="paga"&&(t.pagoEm||0)>=iniM), pc={}; pm.forEach(t=>{ pc[t.categoria]=(pc[t.categoria]||0)+(Number(t.valorPago||t.valor)||0); });
+    const ab=T.filter(t=>["aberta","vencida","vence logo"].includes(t.situacao)), soma=l=>_round2(l.reduce((a,t)=>a+(["aberta","vencida","vence logo"].includes(t.situacao)?(Number(t.restante)||0):(Number(t.valor)||0)),0));
+    const pagosMes=[]; T.forEach(t=>_pagamentosDe(t).forEach(p=>{ if((Number(p.em)||0)>=iniM) pagosMes.push({t,p}); })); const pm=[...new Set(pagosMes.map(x=>x.t.id))], pc={}; pagosMes.forEach(({t,p})=>{ pc[t.categoria]=(pc[t.categoria]||0)+(Number(p.valor)||0); });
     res.json({ok:true,itens:L.slice(0,500).map(t=>({...t,categoria:_catAtual(t.categoria)})),total:L.length,somaFiltro:soma(L),categorias:CATEGORIAS_DESPESA,recorrentes:(C.recorrentes||[]),
       resumo:{aberto:soma(ab),qAberto:ab.length,vencido:soma(ab.filter(t=>t.situacao==="vencida")),qVencido:ab.filter(t=>t.situacao==="vencida").length,semana:soma(ab.filter(t=>t.situacao!=="aberta")),qSemana:ab.filter(t=>t.situacao!=="aberta").length,
-        pagoMes:_round2(pm.reduce((a,t)=>a+(Number(t.valorPago||t.valor)||0),0)),qPagoMes:pm.length,pagoPorCategoria:Object.entries(pc).map(([k,v])=>({categoria:k,valor:_round2(v)})).sort((a,b)=>b.valor-a.valor)}});
+        pagoMes:_round2(pagosMes.reduce((a,x)=>a+(Number(x.p.valor)||0),0)),qPagoMes:pm.length,pagoPorCategoria:Object.entries(pc).map(([k,v])=>({categoria:k,valor:_round2(v)})).sort((a,b)=>b.valor-a.valor)}});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 // ===================== CUSTOS LANÇADOS (visão por mês, com busca e totais para agrupar) =====================
@@ -13455,12 +13463,12 @@ app.get("/api/contas-pagar/lancamentos",requireAcesso("acesso_contas_pagar"),(re
   const C=_gerarRecorrentes(lerContasPagar()), F=lerJSON(FUNC_FILE,{}), q=req.query, hoje=_diaBRk(Date.now()), d7=_diaBRk(Date.now()+7*_DIA), nrm=x=>String(x||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
   const base=["competencia","vencimento","pagamento","entrada"].includes(q.base)?q.base:"competencia", mes=/^\d{4}-\d{2}$/.test(String(q.mes||""))?q.mes:"todos", leve=t=>Object.fromEntries(Object.entries(t).filter(([k,v])=>!(typeof v==="string"&&v.length>2000)));
   let rows=[]; const VAR=_variacaoCustosPagar(C).porTitulo;
- for(const t of C.titulos){ const c=_competenciaDoTitulo(t), pl=_contaDoPlano(t.categoria||(t.origem==="nota"?"Fornecedores (mercadoria)":"Outros")), canc=t.status==="cancelado", pago=t.status==="pago", dp=pago?(t.dataPagamento||(t.pagoEm?_diaBRk(t.pagoEm):"")):"";
+ for(const t of C.titulos){ const c=_competenciaDoTitulo(t), pl=_contaDoPlano(t.categoria||(t.origem==="nota"?"Fornecedores (mercadoria)":"Outros")), canc=t.status==="cancelado", pago=t.status==="pago", dp=(pago||t.status==="parcial")?(t.dataPagamento||(t.pagoEm?_diaBRk(t.pagoEm):"")):"";
     let valorMes=_round2(Number(t.valor)||0), ok=mes==="todos";
-    if(!ok){ if(base==="competencia"){ for(let k=0;k<c.meses;k++){ if(_addMes(c.ini,k)===mes){ ok=true; valorMes=_round2((Number(t.valor)||0)/c.meses); break; } } } else if(base==="vencimento") ok=String(t.vencimento||"").slice(0,7)===mes; else if(base==="entrada") ok=!!t.criadoEm&&_diaBRk(t.criadoEm).slice(0,7)===mes; else { ok=pago&&String(dp).slice(0,7)===mes; valorMes=_round2(Number(t.valorPago||t.valor)||0); } }
+    if(!ok){ if(base==="competencia"){ for(let k=0;k<c.meses;k++){ if(_addMes(c.ini,k)===mes){ ok=true; valorMes=_round2((Number(t.valor)||0)/c.meses); break; } } } else if(base==="vencimento") ok=String(t.vencimento||"").slice(0,7)===mes; else if(base==="entrada") ok=!!t.criadoEm&&_diaBRk(t.criadoEm).slice(0,7)===mes; else { const pgs=_pagamentosDe(t).filter(p=>String(p.data).slice(0,7)===mes); ok=pgs.length>0; valorMes=_round2(pgs.reduce((a,p)=>a+(Number(p.valor)||0),0)); } }
     if(!ok) continue;
     rows.push({...leve(t),categoria:pl.rotulo,cod:pl.cod,grupo:_grupoDoCusto(pl.cod),competenciaTxt:c.meses>1?`${c.ini} (÷${c.meses} meses)`:c.ini,descricao:t.descricao||(t.numeroNota?`${t.origem==="boleto"?"Boleto":"NF"} ${t.numeroNota}`:(t.origem==="boleto"?"Boleto":"Compra")),
-      custoEntrada:VAR.get(t.id)||null,valorMes,dataPagamento:dp,funcionarioNome:t.funcionarioId&&F[t.funcionarioId]?F[t.funcionarioId].nome:"",situacao:canc?"cancelada":pago?"paga":t.vencimento<hoje?"vencida":t.vencimento<=d7?"vence logo":"aberta"}); }
+      custoEntrada:VAR.get(t.id)||null,valorMes,dataPagamento:dp,pagoAcum:_pagoAcum(t),restante:_restante(t),parcial:t.status==="parcial",funcionarioNome:t.funcionarioId&&F[t.funcionarioId]?F[t.funcionarioId].nome:"",situacao:canc?"cancelada":pago?"paga":t.vencimento<hoje?"vencida":t.vencimento<=d7?"vence logo":"aberta"}); }
   if(base==="competencia"&&mes!=="todos") _lancamentosDoMes(C,mes,F,hoje).filter(l=>l.sintetico).forEach(l=>rows.push({...l,fornecedor:{nome:l.fornecedor||""},competenciaTxt:l.competencia,situacao:"paga",dataPagamento:l.pagoEm||""}));
   const nomeF=t=>(t.fornecedor&&t.fornecedor.nome)||"(sem fornecedor)", gruposMeta=_GRUPOS_CUSTO.map(g=>({id:g.id,nome:g.nome,icone:g.icone,fora:!!g.foraDoTotal}));
   const opc=(f)=>{ const m={}; rows.forEach(r=>{ const k=f(r); if(k) m[k]=(m[k]||0)+1; }); return Object.entries(m).sort((a,b)=>a[0].localeCompare(b[0])).map(([nome,qtd])=>({nome,qtd})); };
@@ -13478,7 +13486,7 @@ app.get("/api/contas-pagar/lancamentos",requireAcesso("acesso_contas_pagar"),(re
   // CONCILIAÇÃO com os cartões de cima da tela: lá o "Em aberto" soma TODOS os meses; aqui só o mês escolhido. Devolve o total geral e como ele se divide por mês (mesma base).
   let conc=null;
   if(mes!=="todos"&&base!=="pagamento"&&base!=="entrada"){ const porMes={}; let tq=0,tv=0;
-    for(const t of C.titulos){ if(t.status==="pago"||t.status==="cancelado") continue; const v=Number(t.valor)||0; tq++; tv+=v;
+    for(const t of C.titulos){ if(t.status==="pago"||t.status==="cancelado") continue; const v=_restante(t); tq++; tv+=v;
       if(base==="competencia"){ const c=_competenciaDoTitulo(t); for(let k=0;k<c.meses;k++){ const m=_addMes(c.ini,k), a=porMes[m]||(porMes[m]={q:0,v:0}); a.q++; a.v+=v/c.meses; } }
       else{ const m=String(t.vencimento||"").slice(0,7), a=porMes[m]||(porMes[m]={q:0,v:0}); a.q++; a.v+=v; } }
     const no=porMes[mes]||{q:0,v:0}; conc={totalQ:tq,totalV:_round2(tv),mesQ:no.q,mesV:_round2(no.v),outros:Object.keys(porMes).filter(m=>m!==mes).sort().map(m=>({mes:m,q:porMes[m].q,v:_round2(porMes[m].v)}))}; }
@@ -13518,30 +13526,37 @@ app.post("/api/contas-pagar",requireAcesso("acesso_contas_pagar"),(req,res)=>{
 app.post("/api/contas-pagar/:id/:acao",requireAcesso("acesso_contas_pagar"),(req,res)=>{
   try{ const C=lerContasPagar(), t=C.titulos.find(x=>x.id===req.params.id), b=req.body||{}, quem=req.sessao?.nome||""; if(!t) return res.status(404).json({erro:"conta não encontrada"});
     const a=req.params.acao, hist=(o)=>{ (t.historico||=[]).push({em:Date.now(),por:quem,...o}); };
-    if(a==="pagar"){ if(t.status==="pago") return res.status(409).json({erro:"essa conta já está paga"}); if(t.status==="cancelado") return res.status(409).json({erro:"essa conta está cancelada"});
-      const vp=Number(String(b.valorPago||t.valor).replace(",","."))||t.valor, dp=/^\d{4}-\d{2}-\d{2}$/.test(String(b.data||""))?b.data:_diaBRk(Date.now());
-      if(b.forma==="Dinheiro do caixa"){ const d=lerCaixaSessoes(), sx=(d.sessoes||[]).find(x=>x.id===b.sessaoId&&!x.fechadaEm); if(!sx) return res.status(400).json({erro:"escolha um caixa aberto"});
-        const g=resumoSessaoCaixa(sx).esperadoGaveta; if(vp>g+0.009) return res.status(409).json({erro:`Esse caixa não tem dinheiro suficiente (esperado na gaveta ${brlN(g)}).`});
-        const em=Date.now(); (sx.movimentos||=[]).push({tipo:"sangria",em,valor:_round2(vp),motivo:`Pagamento: ${t.fornecedor?.nome||""} ${t.descricao||""}`.trim().slice(0,150),responsavelNome:quem,contaPagarId:t.id}); salvarCaixaSessoes(d);
-        t.sangria={sessaoId:sx.id,em}; b.banco=`${sx.tipoCaixa==="atacado"?"Caixa Atacado":"Frente de Caixa"} (${sx.operador||""})`; }
-      Object.assign(t,{status:"pago",pagoEm:Date.parse(dp+"T12:00:00-03:00"),dataPagamento:dp,forma:String(b.forma||"").slice(0,40),banco:String(b.banco||"").slice(0,60),valorPago:_round2(vp),pagoPor:quem,observacaoPagamento:String(b.observacao||"").slice(0,200)});
-      hist({acao:"pagou",valor:t.valorPago,forma:t.forma,banco:t.banco}); }
-    else if(a==="reabrir"){ if(t.status!=="pago"&&t.status!=="cancelado") return res.status(400).json({erro:"a conta já está em aberto"}); hist({acao:t.status==="pago"?"desfez o pagamento":"reabriu",motivo:String(b.motivo||"")});
-      if(t.sangria){ const d=lerCaixaSessoes(), sx=(d.sessoes||[]).find(x=>x.id===t.sangria.sessaoId), m=sx&&(sx.movimentos||[]).find(x=>x.tipo==="sangria"&&Number(x.em)===Number(t.sangria.em));
-        if(m&&!m.cancelado){ if(sx.fechadaEm) return res.status(409).json({erro:"o caixa onde saiu o dinheiro já foi fechado: acerte pela Gestão de Caixas"}); m.cancelado=true; m.canceladoMotivo="pagamento desfeito em Contas a Pagar"; m.canceladoPor=quem; salvarCaixaSessoes(d); } delete t.sangria; }
-      ["pagoEm","dataPagamento","forma","banco","valorPago","pagoPor","observacaoPagamento","canceladoEm","motivoCancelamento"].forEach(k=>delete t[k]); t.status="aberto"; }
-    else if(a==="cancelar"){ if(!String(b.motivo||"").trim()) return res.status(400).json({erro:"informe o motivo"}); if(t.status==="pago") return res.status(409).json({erro:"desfaça o pagamento antes de cancelar"});
+   if(a==="pagar"){ if(t.status==="pago") return res.status(409).json({erro:"essa conta já está paga"}); if(t.status==="cancelado") return res.status(409).json({erro:"essa conta está cancelada"});
+ const acum=_pagoAcum(t), falta=_round2((Number(t.valor)||0)-acum), vpIn=Number(String(b.valorPago==null||String(b.valorPago).trim()===""?falta:b.valorPago).replace(",","."));
+ if(!(vpIn>0)) return res.status(400).json({erro:"informe o valor do pagamento"}); const vp=_round2(vpIn), dp=/^\d{4}-\d{2}-\d{2}$/.test(String(b.data||""))?b.data:_diaBRk(Date.now()), quita=vp>=falta-0.009;
+ const pg={id:"pg"+Date.now().toString(36)+Math.random().toString(36).slice(2,4),data:dp,em:Date.parse(dp+"T12:00:00-03:00"),valor:vp,forma:String(b.forma||"").slice(0,40),banco:String(b.banco||"").slice(0,60),por:quem,obs:String(b.observacao||"").slice(0,200)};
+ if(b.forma==="Dinheiro do caixa"){ const d=lerCaixaSessoes(), sx=(d.sessoes||[]).find(x=>x.id===b.sessaoId&&!x.fechadaEm); if(!sx) return res.status(400).json({erro:"escolha um caixa aberto"});
+  const g=resumoSessaoCaixa(sx).esperadoGaveta; if(vp>g+0.009) return res.status(409).json({erro:`Esse caixa não tem dinheiro suficiente (esperado na gaveta ${brlN(g)}).`});
+  const em=Date.now(); (sx.movimentos||=[]).push({tipo:"sangria",em,valor:_round2(vp),motivo:`Pagamento${quita?"":" parcial"}: ${t.fornecedor?.nome||""} ${t.descricao||""}`.trim().slice(0,150),responsavelNome:quem,contaPagarId:t.id,pagamentoId:pg.id}); salvarCaixaSessoes(d);
+  pg.sangria={sessaoId:sx.id,em}; pg.banco=`${sx.tipoCaixa==="atacado"?"Caixa Atacado":"Frente de Caixa"} (${sx.operador||""})`; }
+ // um pagamento único antigo (sem lista) vira o 1º item da lista antes de acrescentar o novo
+ if(!Array.isArray(t.pagamentos)||!t.pagamentos.length){ t.pagamentos=_pagamentosDe(t).map(p=>{ const q={...p}; delete q.legado; return q; }); delete t.sangria; }
+ t.pagamentos.push(pg); _sincronizarPagamentos(t); hist({acao:quita?"pagou":"pagamento parcial",valor:vp,forma:pg.forma,banco:pg.banco,pagoAcumulado:_pagoAcum(t),faltava:quita?0:_round2((Number(t.valor)||0)-_pagoAcum(t))}); }
+ else if(a==="reabrir"){ if(t.status!=="pago"&&t.status!=="parcial"&&t.status!=="cancelado") return res.status(400).json({erro:"a conta já está em aberto"}); hist({acao:t.status==="pago"||t.status==="parcial"?"desfez os pagamentos":"reabriu",motivo:String(b.motivo||"")});
+  for(const p of _pagamentosDe(t)){ const e=_cancelarSangriaPagamento(p,quem); if(e) return res.status(409).json({erro:e}); } delete t.sangria;
+  ["pagoEm","dataPagamento","forma","banco","valorPago","pagoPor","observacaoPagamento","canceladoEm","motivoCancelamento","pagamentos"].forEach(k=>delete t[k]); t.status="aberto"; }
+ else if(a==="desfazer-pagamento"){ const pid=String(b.pagamentoId||""); if(t.status!=="pago"&&t.status!=="parcial") return res.status(400).json({erro:"essa conta não tem pagamento para desfazer"});
+  if(!Array.isArray(t.pagamentos)||!t.pagamentos.length) t.pagamentos=_pagamentosDe(t).map(p=>{ const q={...p}; delete q.legado; return q; }); const p=t.pagamentos.find(x=>x.id===pid); if(!p) return res.status(404).json({erro:"pagamento não encontrado"});
+  const e=_cancelarSangriaPagamento(p,quem); if(e) return res.status(409).json({erro:e}); t.pagamentos=t.pagamentos.filter(x=>x.id!==pid); delete t.sangria; hist({acao:"desfez um pagamento",valor:p.valor,forma:p.forma,banco:p.banco,data:p.data,motivo:String(b.motivo||"")}); _sincronizarPagamentos(t); }
+ else if(a==="cancelar"){ if(!String(b.motivo||"").trim()) return res.status(400).json({erro:"informe o motivo"}); if(t.status==="pago"||t.status==="parcial") return res.status(409).json({erro:"desfaça os pagamentos antes de cancelar"});
       Object.assign(t,{status:"cancelado",canceladoEm:Date.now(),motivoCancelamento:String(b.motivo).slice(0,200)}); hist({acao:"cancelou",motivo:t.motivoCancelamento}); }
     else if(a==="editar"){
       // campos de texto (descrição, fornecedor, categoria, observação, competência) podem ser corrigidos SEMPRE; os de dinheiro e data só quando não mexem num pagamento que saiu do caixa
       const vazio=x=>x==null||String(x).trim()==="", v=!vazio(b.valor)?Number(String(b.valor).replace(",",".")):null, vp=!vazio(b.valorPago)?Number(String(b.valorPago).replace(",",".")):null;
       if(v!=null&&!(v>0)) return res.status(400).json({erro:"valor inválido"}); if(vp!=null&&!(vp>0)) return res.status(400).json({erro:"valor pago inválido"});
-      const dataOk=x=>/^\d{4}-\d{2}-\d{2}$/.test(String(x||"")), pago=t.status==="pago", cancel=t.status==="cancelado";
+      const dataOk=x=>/^\d{4}-\d{2}-\d{2}$/.test(String(x||"")), pago=t.status==="pago", cancel=t.status==="cancelado", temPag=Array.isArray(t.pagamentos)&&t.pagamentos.length>0;
+ if(v!=null&&temPag&&_round2(v)<_pagoAcum(t)-0.009) return res.status(409).json({erro:`o valor não pode ficar menor que o já pago (${brlN(_pagoAcum(t))})`});
+ if(temPag&&pago&&((vp!=null&&_round2(vp)!==t.valorPago)||(dataOk(b.dataPagamento)&&b.dataPagamento!==t.dataPagamento)||(b.forma!=null&&String(b.forma)!==String(t.forma||""))||(b.banco!=null&&String(b.banco)!==String(t.banco||"")))) return res.status(409).json({erro:"esta conta tem pagamentos separados: use Desfazer no pagamento certo e lance de novo"});
       const antes={valor:t.valor,vencimento:t.vencimento,categoria:t.categoria,descricao:t.descricao,fornecedor:t.fornecedor&&t.fornecedor.nome||"",observacao:t.observacao||"",...(pago?{valorPago:t.valorPago,dataPagamento:t.dataPagamento,forma:t.forma,banco:t.banco}:{})};
       const mudaDinheiro=(v!=null&&_round2(v)!==t.valor)||(dataOk(b.vencimento)&&b.vencimento!==t.vencimento)||(pago&&((vp!=null&&_round2(vp)!==t.valorPago)||(dataOk(b.dataPagamento)&&b.dataPagamento!==t.dataPagamento)||(b.forma!=null&&String(b.forma)!==String(t.forma||""))||(b.banco!=null&&String(b.banco)!==String(t.banco||""))));
       if(mudaDinheiro&&cancel) return res.status(409).json({erro:"essa conta está cancelada: reabra para mudar valor ou datas (descrição, fornecedor e categoria podem ser corrigidos)"});
       if(mudaDinheiro&&pago&&t.sangria) return res.status(409).json({erro:"o pagamento saiu de um caixa: desfaça o pagamento para mudar valores ou datas (descrição, fornecedor e categoria podem ser corrigidos)"});
-      if(v!=null) t.valor=_round2(v); if(dataOk(b.vencimento)) t.vencimento=b.vencimento;
+      if(v!=null) t.valor=_round2(v); if(v!=null&&temPag&&!cancel) _sincronizarPagamentos(t); if(dataOk(b.vencimento)) t.vencimento=b.vencimento;
       if(pago){ if(vp!=null) t.valorPago=_round2(vp); if(dataOk(b.dataPagamento)){ t.dataPagamento=b.dataPagamento; t.pagoEm=Date.parse(b.dataPagamento+"T12:00:00-03:00"); } if(b.forma!=null&&String(b.forma).trim()) t.forma=String(b.forma).slice(0,40); if(b.banco!=null) t.banco=String(b.banco).slice(0,60); }
       if(b.categoria) t.categoria=_contaDoPlano(b.categoria).rotulo; if(b.descricao!=null&&String(b.descricao).trim()) t.descricao=String(b.descricao).trim().slice(0,120);
       if(b.fornecedor!=null) t.fornecedor={...(t.fornecedor||{}),nome:String(b.fornecedor).trim().slice(0,120)}; if(b.observacao!=null) t.observacao=String(b.observacao).slice(0,200);
@@ -14267,8 +14282,8 @@ const _ehDiaIso=x=>/^\d{4}-\d{2}-\d{2}$/.test(String(x||""));
 const _bancoDaForma=(banco,forma)=>String(banco||"").trim()||((/pix\s+banco\s+(.+)$/i.exec(String(forma||""))||[])[1]||"").trim();
 function _movsBancariosAuto(){
   const out=[], chaves=new Set(), semDinheiroNemCartao=f=>!(/dinheiro|cart[aã]o|cr[eé]dito|d[eé]bito/i.test(String(f||""))&&!/pix/i.test(String(f||"")));
-  try{ (lerContasPagar().titulos||[]).forEach(t=>{ if(t.status!=="pago"||t.sangria||!t.banco||/dinheiro do caixa/i.test(t.forma||"")) return; const v=Number(t.valorPago!=null?t.valorPago:t.valor)||0; if(!(v>0)) return;
-      const data=_ehDiaIso(t.dataPagamento)?t.dataPagamento:(t.pagoEm?_diaBRk(t.pagoEm):String(t.vencimento||"")); out.push({id:"t:"+t.id,data,ms:Number(t.pagoEm)||Date.parse(data+"T12:00:00-03:00")||0,tipo:"saida",valor:_round2(v),banco:t.banco,origem:"Conta paga",forma:t.forma||"",descricao:`${(t.fornecedor&&t.fornecedor.nome)||""}${t.descricao?" · "+t.descricao:""}`.replace(/^ · /,""),ref:{tipo:"titulo",id:t.id}}); }); }catch(e){}
+  try{ (lerContasPagar().titulos||[]).forEach(t=>{ const PG=_pagamentosDe(t); PG.forEach(p=>{ if(p.sangria||!p.banco||/dinheiro do caixa/i.test(p.forma||"")) return; const v=Number(p.valor)||0; if(!(v>0)) return; const data=_ehDiaIso(p.data)?p.data:(p.em?_diaBRk(p.em):String(t.vencimento||""));
+      out.push({id:"t:"+t.id+(p.legado?"":":"+p.id),data,ms:Number(p.em)||Date.parse(data+"T12:00:00-03:00")||0,tipo:"saida",valor:_round2(v),banco:p.banco,origem:PG.length>1?"Conta paga (parcial)":"Conta paga",forma:p.forma||"",descricao:`${(t.fornecedor&&t.fornecedor.nome)||""}${t.descricao?" · "+t.descricao:""}`.replace(/^ · /,""),ref:{tipo:"titulo",id:t.id}}); }); }); }catch(e){}
   try{ (lerCaixaSessoesCompleto().sessoes||[]).forEach(sx=>(sx.movimentos||[]).forEach(m=>{ if(!m||m.cancelado) return;
       if(m.tipo==="venda") (m.pagamentos||[]).forEach(p=>{ const v=Number(p.valor)||0, bk=_bancoDaForma(p.banco,p.formaNome); if(!bk||!(v>0)||!semDinheiroNemCartao(p.formaNome)) return; chaves.add(`${m.pedidoId}|${v.toFixed(2)}|${_nomeNrm(bk)}`);
         out.push({id:`c:${m.pedidoId||""}:${m.em}:${v}`,data:_diaBRk(m.em),ms:Number(m.em)||0,tipo:"entrada",valor:_round2(v),banco:bk,origem:"Recebido no caixa",forma:p.formaNome||"Pix",descricao:`${p.formaNome||"Pix"} · ${m.clienteNome||"cliente"}${m.pedidoNumero?" · pedido "+m.pedidoNumero:""}`,ref:{tipo:"pedido",id:m.pedidoId}}); });
