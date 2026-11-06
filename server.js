@@ -6111,9 +6111,20 @@ app.post("/api/caixa-sessao/movimento",(req,res)=>{
   // Sangria pode ser MAIOR que o dinheiro em caixa (a pedido) — nao trava mais nisso;
   // o caixa apenas fica negativo no esperado, o que e permitido.
   try{ if(typeof _cacheAguardPag!=="undefined") _cacheAguardPag.em=0; }catch(e){}
-  sessao.movimentos.push({tipo,valor:v,motivo:motivo||"",operador:operador||"—",em:Date.now(),
-    responsavelId:String(responsavelId), responsavelNome:resp.nome||""});
+  // SUPRIMENTO sai da CONTA DE TROCO (a caixinha da Gestão de Caixas): sem saldo nela, o suprimento é recusado e nada é gravado.
+  // Tudo síncrono daqui até gravar os dois arquivos, então dois suprimentos ao mesmo tempo não gastam o mesmo saldo.
+  let _dTroco=null, _movTroco=null;
+  if(tipo==="suprimento"){
+    _dTroco=lerContaTroco(); const saldoT=_saldoTroco(_dTroco.movimentos);
+    if(v>saldoT+0.004) return res.status(409).json({erro:`A conta de troco (caixinha) não tem saldo para esse suprimento: há ${brlN(saldoT)} e o suprimento é de ${brlN(v)}. Faça uma entrada na conta de troco em Gestão de Caixas ou peça um valor menor.`,saldoTroco:saldoT});
+    _movTroco=_novoMovTroco(_dTroco,{tipo:"saida",valor:v,categoria:"Suprimento para o caixa",descricao:`Suprimento para ${sessao.tipoCaixa==="atacado"?"Caixa Atacado":"Frente de Caixa"} · ${sessao.operador||operador||""}${motivo?" · "+String(motivo).slice(0,80):""}`,sessaoId:sessao.id,por:operador||req.sessao?.nome||""});
+  }
+  const _movCx={tipo,valor:v,motivo:motivo||"",operador:operador||"—",em:Date.now(),
+    responsavelId:String(responsavelId), responsavelNome:resp.nome||""};
+  if(_movTroco) _movCx.trocoMovId=_movTroco.id;
+  sessao.movimentos.push(_movCx);
   salvarCaixaSessoes(d);
+  if(_dTroco) salvarJSON(CONTA_TROCO_FILE,_dTroco);
   addLog("caixa-"+sessao.id, tipo==="sangria"?"sangria":"suprimento", funcionarioId, operador||"—", {valor:v,motivo:motivo||"",responsavel:resp.nome||""});
   res.json({ok:true,resumo:resumoSessaoCaixa(sessao),responsavelNome:resp.nome||""});
 });
@@ -6185,7 +6196,7 @@ app.post("/api/caixa-sessao/fechar",(req,res)=>{
 // A contagem física diária fica registrada (conferência) com a diferença, e pode gerar um ajuste.
 const CONTA_TROCO_FILE=`${DATA_DIR}/conta_troco.json`;
 const TROCO_CATEGORIAS={ entrada:["Recolhimento do troco dos caixas","Reforço de troco","Sobra na conferência","Outra entrada"],
-  saida:["Troco para abrir caixa","Depósito no banco","Pagamento de despesa","Falta na conferência","Outra saída"] };
+  saida:["Troco para abrir caixa","Suprimento para o caixa","Depósito no banco","Pagamento de despesa","Falta na conferência","Outra saída"] };
 function lerContaTroco(){ const d=lerJSON(CONTA_TROCO_FILE,null)||{}; d.seq||=0; d.movimentos||=[]; d.conferencias||=[]; return d; }
 const _trocoValido=m=>!m.estornadoEm;
 function _saldoTroco(movs,ate){ return _round2(movs.filter(m=>_trocoValido(m)&&(ate==null||m.em<=ate)).reduce((s2,m)=>s2+(m.tipo==="entrada"?1:-1)*Number(m.valor||0),0)); }
@@ -6242,6 +6253,8 @@ app.post("/api/conta-troco/:id/estornar",requireAcesso("acesso_gestao_caixas"),(
   const motivo=String(req.body?.motivo||"").trim().slice(0,200); if(!motivo) return res.status(400).json({erro:"informe o motivo do estorno"});
   const d=lerContaTroco(); const m=d.movimentos.find(x=>x.id===req.params.id);
   if(!m) return res.status(404).json({erro:"lançamento não encontrado"}); if(m.estornadoEm) return res.status(409).json({erro:"esse lançamento já foi estornado"});
+  // saída que virou suprimento de um caixa: o dinheiro já está no caixa, estornar aqui faria o valor existir nos dois lugares
+  if(m.tipo==="saida"&&m.categoria==="Suprimento para o caixa") return res.status(409).json({erro:"Essa saída é um suprimento que já entrou num caixa, por isso não pode ser estornada aqui. Se o suprimento foi lançado por engano, faça uma sangria no caixa e depois uma entrada na conta de troco."});
   if(m.tipo==="entrada"){ const saldoSem=_saldoTroco(d.movimentos)-m.valor; if(saldoSem<-0.004) return res.status(409).json({erro:`Estornar essa entrada deixaria o saldo negativo (${brlN(saldoSem)}). Estorne antes as saídas que usaram esse dinheiro.`}); }
   m.estornadoEm=Date.now(); m.estornadoPor=req.sessao?.nome||""; m.motivoEstorno=motivo;
   salvarJSON(CONTA_TROCO_FILE,d); res.json({ok:true,saldo:_saldoTroco(d.movimentos)});
