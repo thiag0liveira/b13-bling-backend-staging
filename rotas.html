@@ -80,6 +80,7 @@
 </script>
 <div id="app"></div>
 <div id="modais"></div>
+<div id="modalConfig"></div>
 <script>const B = location.protocol.indexOf("http") === 0 ? "" : "https://b13-bling-backend-production.up.railway.app";
 const FUNC = typeof b13GetSession === "function" ? b13GetSession() : null;
 const esc = s => String(s !== null && s !== void 0 ? s : "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -1049,17 +1050,29 @@ async function desenharMapa(carroId, vix) {
 }
 
 // ---------- CONFIG ----------
+// A configuracao abre numa JANELA por cima da tela (antes entrava no meio da pagina, abaixo do seletor de dia,
+// e parecia que o botao nao fazia nada). A janela mora em #modalConfig, fora do #app, entao o render nao a apaga.
+function desenharJanelaConfig() {
+  const el = document.getElementById("modalConfig");
+  if (!el) return;
+  if (!S.editandoConfig || !S.config) { el.innerHTML = ""; document.body.style.overflow = ""; return; }
+  const rolagem = el.querySelector(".modal") ? el.querySelector(".modal").scrollTop : 0;
+  el.innerHTML = `<div class="modalBg" onclick="if(event.target===this)fecharConfig()"><div class="modal" style="max-width:720px;padding:0">${htmlConfig()}</div></div>`;
+  const m = el.querySelector(".modal");
+  if (m) m.scrollTop = rolagem;
+  document.body.style.overflow = "hidden";
+}
 function abrirConfig() {
   S.editandoConfig = true;
-  render();
+  desenharJanelaConfig();
 }
 function fecharConfig() {
   S.editandoConfig = false;
-  render();
+  desenharJanelaConfig();
 }
 function toggleDiaConfig(ix) {
   S.config.diasEntrega[ix] = !S.config.diasEntrega[ix];
-  render();
+  desenharJanelaConfig();
 }
 function addCarroConfig() {
   S.config.carros.push({
@@ -1070,21 +1083,26 @@ function addCarroConfig() {
     horaSaida: "10:00",
     horaFimJanela: "19:00"
   });
-  render();
+  desenharJanelaConfig();
 }
 function removerCarroConfig(ix) {
   S.config.carros.splice(ix, 1);
-  render();
+  desenharJanelaConfig();
 }
 async function salvarConfig() {
-  await fetch(B + "/api/rotas/config", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(S.config)
-  });
+  let r;
+  try {
+    r = await fetch(B + "/api/rotas/config", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(S.config)
+    });
+  } catch (e) { alert("Sem conexão com o servidor. A configuração não foi salva."); return; }
+  if (!r.ok) { alert("Não consegui salvar a configuração (erro " + r.status + "). Tente de novo."); return; }
   S.editandoConfig = false;
+  desenharJanelaConfig();
   await carregarTudo();
 }
 
@@ -1232,7 +1250,6 @@ function renderInterno() {
     <button class="btn btn-ghost" onclick="mudarDia(1)">Próximo dia →</button>
   </div>`;
   h += htmlResumoDias();
-  if (S.editandoConfig) h += htmlConfig();
   h += htmlViagensDoDia();
 
   // DIA QUE JÁ PASSOU: não dá mais pra mexer nos pedidos recebidos/entregues —
@@ -1389,7 +1406,7 @@ function htmlResumoDias() {
 }
 function htmlConfig() {
   const c = S.config;
-  return `<div class="card">
+  return `<div class="card" style="margin:0;border:0;background:transparent">
     <div style="font-weight:900;margin-bottom:10px">⚙️ Configuração de entregas</div>
     <div class="lbl">Dias em que fazemos entrega</div>
     <div class="diasgrid">
@@ -1433,7 +1450,7 @@ function htmlConfig() {
       </div>`).join("")}
     <div class="muted" style="font-size:11px;margin:-2px 0 8px">"Entregas" é quantas paradas essa rota deve ter no dia. "Kg sugeridos" é o peso ideal pra essa rota — o sistema tenta chegar perto disso, mas pode passar um pouco se precisar pra fechar a quantidade de entregas.</div>
     <button class="btn btn-ghost" style="margin-top:6px" onclick="addCarroConfig()">+ Adicionar carro</button>
-    <div style="display:flex;gap:8px;margin-top:14px">
+    <div style="display:flex;gap:8px;margin-top:14px;position:sticky;bottom:-18px;background:#151233;padding:10px 0 4px">
       <button class="btn btn-grn" style="flex:1" onclick="salvarConfig()">💾 Salvar configuração</button>
       <button class="btn btn-ghost" style="flex:1" onclick="fecharConfig()">Cancelar</button>
     </div>
