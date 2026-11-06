@@ -236,12 +236,43 @@ function cardMotoristas() {
     </div>${linhas}
     <div class="muted" style="font-size:11px">${esc(M.data.split("-").reverse().join("/"))} · <a href="/rotas" style="color:#7fd0ff">abrir Rotas</a> para dividir ou mudar pedidos de carro · <a href="/entregas-dashboard" style="color:#7fd0ff">ver o dashboard mensal de entregas</a>.</div>`);
 }
+// ---- Espaço em disco (fotos e vídeos ocupam o volume do servidor) ----
+let ESPACO = null;
+async function carregarEspaco() { try { const { ok, j } = await _apiC("/api/saude/espaco"); if (ok && j && j.ok) { ESPACO = j; render(); } } catch (e) {} }
+function _gbTxt(mb) { return mb >= 1024 ? (mb / 1024).toFixed(1).replace(".", ",") + " GB" : Math.round(mb) + " MB"; }
+function chipEspaco() {
+  if (!ESPACO) return "";
+  const e = ESPACO, cor = e.nivel === "baixo" ? "#ff6b6b" : e.nivel === "atencao" ? "#ffd23f" : "#3ce88a", ic = e.nivel === "ok" ? "💾" : "⚠️";
+  return `<button class="btn btn-ghost" style="border:1px solid ${cor};color:${cor};font-weight:800" onclick="detalheEspaco()" title="Espaço livre no servidor">${ic} ${_gbTxt(e.livreMB)} livres</button>`;
+}
+function detalheEspaco() {
+  const e = ESPACO; if (!e) return;
+  const cor = e.nivel === "baixo" ? "#ff6b6b" : e.nivel === "atencao" ? "#ffd23f" : "#3ce88a";
+  const msg = e.nivel === "baixo" ? "Espaço baixo. O sistema já está apagando os vídeos e fotos mais antigos para liberar. Se isso continuar, aumente o volume do servidor no Railway."
+    : e.nivel === "atencao" ? "Espaço começando a ficar curto. Fique de olho nos próximos dias." : "Espaço tranquilo.";
+  const el = document.createElement("div"); el.id = "modalEspaco";
+  el.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;z-index:300;padding:16px";
+  el.onclick = ev => { if (ev.target === el) el.remove(); };
+  el.innerHTML = `<div style="background:#151233;border:1px solid #2c2660;border-radius:16px;padding:18px;max-width:420px;width:100%">
+    <div style="font-weight:900;font-size:16px;margin-bottom:10px">💾 Espaço do servidor</div>
+    <div style="background:#0c0a24;border-radius:999px;height:14px;overflow:hidden;margin-bottom:6px"><div style="width:${Math.min(100, e.pctUsado)}%;height:100%;background:${cor}"></div></div>
+    <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:12px"><span>${_gbTxt(e.usadoMB)} usados (${String(e.pctUsado).replace(".", ",")}%)</span><b style="color:${cor}">${_gbTxt(e.livreMB)} livres</b></div>
+    <div class="linha" style="display:flex;justify-content:space-between;padding:4px 0"><span>Total do volume</span><b>${_gbTxt(e.totalMB)}</b></div>
+    <div class="linha" style="display:flex;justify-content:space-between;padding:4px 0"><span>🎥 Vídeos guardados (${e.videos.qtd})</span><b>${_gbTxt(e.videos.mb)}</b></div>
+    <div class="linha" style="display:flex;justify-content:space-between;padding:4px 0"><span>📷 Fotos guardadas (${e.fotos.qtd})</span><b>${_gbTxt(e.fotos.mb)}</b></div>
+    ${e.arquivoMaisAntigoDias != null ? `<div class="muted" style="font-size:12px;margin-top:8px">O arquivo mais antigo guardado tem ${String(e.arquivoMaisAntigoDias).replace(".", ",")} dias. O normal é guardar ${e.limiteDiasGuardados} dias.</div>` : ""}
+    <div style="margin-top:10px;font-size:13px;color:${cor}">${msg}</div>
+    <div class="muted" style="font-size:11px;margin-top:6px">O sistema mantém pelo menos ${e.metaLivrePct}% livre, apagando primeiro os vídeos mais antigos e depois as fotos.</div>
+    <button class="btn btn-ghost" style="width:100%;margin-top:12px" onclick="document.getElementById('modalEspaco').remove()">Fechar</button></div>`;
+  document.body.appendChild(el);
+}
 function render() {
   var _META$vendidoAtendido, _META$pctMetaAtendido, _META$pctMetaAtendido2, _META$pctMetaAtendido3, _META$pctMetaAtendido4, _META$pctMetaAtendido5, _META$faltaAtendido, _META$faltaAtendido2, _META$idealPorDiaRest, _META$mediaDiariaAten, _APOIO$metaMes, _APOIO$metaMes2, _APOIO$metaMes3, _APOIO$config, _APOIO$config2, _APOIO$config3, _b$pedidos$fechamento, _f$consumidorFinal, _f$consumidorFinal2, _b$pedidos$maiores, _f$porTipoCaixa, _f$porTipoCaixa2, _f$porTipoCaixa3, _f$porTipoCaixa4, _f$porTipoCaixa5, _f$porTipoCaixa6, _b$notasEmitidas$nfce, _b$notasEmitidas$nfce2, _b$notasEmitidas$nfce3, _b$notasEmitidas$nfe, _b$notasEmitidas$nfe2, _b$notasEmitidas$porS, _D$nfce, _D$nfce2, _D$nfce3, _b$notasEmitidas$porC, _b$entradas$fornecedo, _D$propostas, _D$propostas2, _D$propostas3;
   const app = document.getElementById("app");
   const topo = `<div class="top"><button onclick="b13ToggleNav()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer">☰</button><img src="/logo"><div class="t">🏠 Central</div><div class="sp"></div>
     <input type="date" value="${DIA}" onchange="DIA=this.value;D=null;carregar()" style="background:#1c1846;border:1px solid #37327a;border-radius:8px;color:#fff;padding:6px">
     <button class="btn btn-ghost" onclick="rodarAuditoria()">🔎 Rodar auditoria</button>
+    ${chipEspaco()}
     <button class="btn btn-ghost" onclick="carregar()">🔄</button></div>`;
   if (!D) {
     app.innerHTML = topo + `<div class="wrap"><div class="card"><div class="muted">Carregando…</div></div></div>`;
@@ -796,6 +827,8 @@ async function carregar() {
   TIMER = setTimeout(carregar, D && D.bling && D.bling.calculando ? 8000 : 60000);
 }
 render();
-carregar();</script>
+carregar();
+carregarEspaco();
+setInterval(carregarEspaco, 300000);</script>
 </body>
 </html>

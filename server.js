@@ -4582,6 +4582,18 @@ app.get("/api/saude/disco",requireSessao,(req,res)=>{
       ultimosApagados:(()=>{ try{ return fs.readFileSync(COMPROV_APAGADOS_FILE,"utf8").trim().split("\n").slice(-15).reverse().map(l=>{ try{ const o=JSON.parse(l); return {quando:new Date(o.em-3*3600e3).toISOString().slice(0,16).replace("T"," "),arquivo:o.nome,MB:MB(o.bytes),motivo:o.motivo,livrePct:o.livrePct}; }catch(e){ return null; } }).filter(Boolean); }catch(e){ return []; } })()});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
+// ESPAÇO EM DISCO (leve, para o indicador da Central): total, livre, usado e quanto ocupam fotos e vídeos. Não varre as pastas do servidor (isso é a /api/saude/disco).
+app.get("/api/saude/espaco",requireSessao,(req,res)=>{
+  try{
+    const d=_discoInfo(); if(!d) return res.json({ok:false,erro:"não consegui ler o espaço do disco"});
+    const MB=b=>+(b/1048576).toFixed(1); let v=0,f=0,bv=0,bf=0,antigo=null;
+    try{ const st=_statComprovantes(); st.arquivos.forEach(a=>{ if(/\.(mp4|mov|webm|3gp|mkv|avi)$/i.test(a.nome)){ v++; bv+=a.bytes; } else { f++; bf+=a.bytes; } }); antigo=st.arquivos[0]?st.arquivos[0].mtime:null; }catch(e){}
+    const metaPct=DISCO_ALVO_LIVRE_PCT, nivel=d.pctLivre<metaPct?"baixo":(d.pctLivre<metaPct*2?"atencao":"ok");
+    res.json({ok:true,totalMB:MB(d.total),livreMB:MB(d.livre),usadoMB:MB(d.usado),pctLivre:d.pctLivre,pctUsado:+(100-d.pctLivre).toFixed(1),nivel,metaLivrePct:metaPct,
+      fotos:{qtd:f,mb:MB(bf)},videos:{qtd:v,mb:MB(bv)},arquivoMaisAntigoDias:antigo?+((Date.now()-antigo)/86400000).toFixed(1):null,
+      limiteDiasGuardados:COMPROV_DIAS_MANTER});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
 // GRAVAÇÕES RECENTES: quantas fotos/vídeos foram enviados nos últimos dias, quantos estão no disco, quais sumiram (e por quê) e a idade do arquivo mais antigo guardado
 app.get("/api/diag/midias-recentes",requireAdmin,(req,res)=>{ try{ const dias=Math.min(60,Math.max(1,Number(req.query.dias)||3)), desde=Date.now()-dias*86400000, L=lerLog(), dh=ms=>ms?new Date(Number(ms)-3*3600e3).toISOString().slice(0,19).replace("T"," "):"", num={}; try{ _indicePedidos().lista.forEach(r=>{ num[String(r.id)]=r.numero; }); }catch(e){}
   const porDia={}, ausentes=[]; let total=0, ok=0, bytesOk=0, videos=0, videosOk=0;
