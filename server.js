@@ -14091,6 +14091,48 @@ function _linhasPrecoPedido(F,chaveBling){ const P=lerProdutosBling().porId, idx
     if(b!=null){ if(varejo&&Math.abs(b-varejo)<0.02&&!(atac!=null&&Math.abs(b-atac)<0.02)) cls="varejo"; else if(atac!=null&&Math.abs(b-atac)<0.02) cls="atacado"; else cls="outro"; }
     const dif=Object.entries(precos).filter(([n,v])=>n!==chaveBling&&n!=="caixaAntesDaEdicao"&&v!=null&&b!=null&&Math.abs(v-b)>0.02).map(([n,v])=>`${n}: R$ ${v}`);
     return {produtoId:k,nome:p.n||"",codigo:cod,precos,tabelaAtacado:atac,varejoCadastro:varejo,classificacao:cls,sistema:sis,bling:b,diferemDoBling:dif}; }); }
+// COMPARAÇÃO DO DIA: o que passou nos caixas do sistema contra o que a Margem bruta conta, pedido a pedido.
+// Mostra por que "vendido no dia" na Central (pagamentos nos nossos caixas) e na Margem (pedidos do dia, só itens, sem frete e sem taxa) não batem.
+app.get("/api/diag/vendas-dia",requireAdmin,(req,res)=>{ try{
+  const dia=_hojeISO(req.query.dia), ini=_inicioDia(dia), fim=_fimDia(dia), noDia=ms=>ms>=ini&&ms<fim, R2=_round2, I=_indicePedidos();
+  const somaItens=id=>_itensDoPedido(id).reduce((a,i)=>a+(Number(i.valor)||0)*(Number(i.quantidade)||0),0);
+  const cat={ contaNaMargem:{qtd:0,totalCaixa:0,totalItens:0,lista:[]}, pedidoDeOutroDia:{qtd:0,totalCaixa:0,lista:[]}, semItens:{qtd:0,totalCaixa:0,lista:[]}, cancelado:{qtd:0,totalCaixa:0,lista:[]}, foraDoIndice:{qtd:0,totalCaixa:0,lista:[]}, semPedido:{qtd:0,totalCaixa:0,lista:[]} };
+  let totCx=0, qtdCx=0; const porTipo={atacado:{qtd:0,total:0},frente:{qtd:0,total:0}}, caixasOutroDia=[];
+  const add=(k,m,t,extra)=>{ const c=cat[k]; c.qtd++; c.totalCaixa+=t; if(c.lista.length<60) c.lista.push({numero:m.numero||m.pedidoId||"",cliente:m.clienteNome||"",totalCaixa:R2(t),operador:m.operador||"",hora:new Date(m.em-3*3600e3).toISOString().slice(11,16),...extra}); };
+  (lerCaixaSessoes().sessoes||[]).forEach(s=>{
+    if(s.fechadaEm&&(noDia(s.fechadaEm)||noDia(s.abertaEm))&&!noDia(s.abertaEm)){ const r=resumoSessaoCaixa(s); caixasOutroDia.push({operador:s.operador,tipo:s.tipoCaixa||"frente",abertoEm:new Date(s.abertaEm-3*3600e3).toISOString().slice(0,16).replace("T"," "),fechadoEm:new Date(s.fechadaEm-3*3600e3).toISOString().slice(0,16).replace("T"," "),totalNoCartaoDoCaixa:R2(r.totalVendas),vendasDoCaixa:r.qtdVendas,vendasFeitasHoje:(s.movimentos||[]).filter(m=>m.tipo==="venda"&&!m.cancelado&&noDia(m.em)).length}); }
+    (s.movimentos||[]).forEach(m=>{
+      if(m.tipo!=="venda"||m.cancelado||!noDia(m.em)) return;
+      const t=Number(m.total)||0; totCx+=t; qtdCx++; const tp=(s.tipoCaixa||"frente")==="atacado"?"atacado":"frente"; porTipo[tp].qtd++; porTipo[tp].total+=t;
+      if(!m.pedidoId){ add("semPedido",m,t); return; }
+      const r=I.porId[String(m.pedidoId)]; if(!r){ add("foraDoIndice",m,t); return; }
+      if(r.cancelado){ add("cancelado",m,t); return; }
+      if(r.data!==dia){ add("pedidoDeOutroDia",m,t,{pedidoCriadoEm:r.data}); return; }
+      const it=somaItens(String(m.pedidoId)); if(!(it>0)){ add("semItens",m,t); return; }
+      cat.contaNaMargem.qtd++; cat.contaNaMargem.totalCaixa+=t; cat.contaNaMargem.totalItens+=it;
+      if(cat.contaNaMargem.lista.length<60) cat.contaNaMargem.lista.push({numero:m.numero||m.pedidoId,cliente:m.clienteNome||"",totalCaixa:R2(t),itens:R2(it),diferenca:R2(t-it)});
+    });
+  });
+  // o que a Margem bruta conta nesse dia (mesma regra: pedidos criados no dia, não cancelados, com itens)
+  const mg={pedidos:0,total:0,pedidosSemItens:{qtd:0,total:0}, porOrigem:{caixaDoSistema:{qtd:0,total:0},sistemaSemCaixa:{qtd:0,total:0},blingDireto:{qtd:0,total:0}}};
+  I.lista.forEach(r=>{ if(r.data!==dia||r.cancelado) return; const it=somaItens(String(r.id)); if(!(it>0)){ mg.pedidosSemItens.qtd++; mg.pedidosSemItens.total+=Number(r.total)||0; return; }
+    mg.pedidos++; mg.total+=it; const o=r.caixa?"caixaDoSistema":(r.soBling?"blingDireto":"sistemaSemCaixa"); mg.porOrigem[o].qtd++; mg.porOrigem[o].total+=it; });
+  Object.values(cat).forEach(c=>{ c.totalCaixa=R2(c.totalCaixa); if(c.totalItens!==undefined) c.totalItens=R2(c.totalItens); c.lista.sort((a,b)=>b.totalCaixa-a.totalCaixa); });
+  const BR=v=>"R$ "+R2(v).toFixed(2).replace(".",",").replace(/\B(?=(\d{3})+(?!\d))/g,".");
+  const leitura=[`Nos caixas do sistema o dia tem ${qtdCx} venda(s) e ${BR(totCx)} (atacado ${BR(porTipo.atacado.total)}, varejo do sistema ${BR(porTipo.frente.total)}). É a conta do Fechamento do dia da Central.`,
+    `A Margem bruta conta ${mg.pedidos} pedido(s) criados no dia e ${BR(mg.total)} só em itens (sem frete e sem taxa de cartão); ${BR(mg.porOrigem.blingDireto.total)} disso é varejo lançado direto no Bling.`];
+  if(cat.contaNaMargem.qtd) leitura.push(`${cat.contaNaMargem.qtd} venda(s) do caixa estão na Margem: o caixa recebeu ${BR(cat.contaNaMargem.totalCaixa)} e os itens somam ${BR(cat.contaNaMargem.totalItens)}. A diferença de ${BR(cat.contaNaMargem.totalCaixa-cat.contaNaMargem.totalItens)} é frete, taxa de cartão e arredondamentos.`);
+  if(cat.pedidoDeOutroDia.qtd) leitura.push(`${cat.pedidoDeOutroDia.qtd} venda(s) de ${BR(cat.pedidoDeOutroDia.totalCaixa)} foram pagas hoje no caixa, mas o pedido foi criado em outro dia. A Margem coloca essas vendas no dia em que o pedido foi criado.`);
+  if(cat.semItens.qtd) leitura.push(`${cat.semItens.qtd} venda(s) de ${BR(cat.semItens.totalCaixa)} estão sem os itens do pedido e por isso a Margem não conta.`);
+  if(cat.cancelado.qtd) leitura.push(`${cat.cancelado.qtd} venda(s) de ${BR(cat.cancelado.totalCaixa)} são de pedido que está cancelado no Bling, mas passou no caixa.`);
+  if(cat.foraDoIndice.qtd) leitura.push(`${cat.foraDoIndice.qtd} venda(s) de ${BR(cat.foraDoIndice.totalCaixa)} são de pedido que não está na lista de pedidos do sistema.`);
+  if(cat.semPedido.qtd) leitura.push(`${cat.semPedido.qtd} venda(s) de ${BR(cat.semPedido.totalCaixa)} foram feitas no caixa sem pedido ligado, por isso ficam fora da Margem.`);
+  if(caixasOutroDia.length) leitura.push(`${caixasOutroDia.length} caixa(s) que aparecem em "Caixas fechados no dia" foram abertos em outro dia: o cartão do caixa mostra o total inteiro dele, mas o Fechamento do dia só conta as vendas de hoje.`);
+  if(mg.pedidosSemItens.qtd) leitura.push(`${mg.pedidosSemItens.qtd} pedido(s) do dia (${BR(mg.pedidosSemItens.total)}) ainda estão sem itens e a Margem não conta.`);
+  res.json({ok:true,dia,caixasDoSistema:{vendas:qtdCx,total:R2(totCx),atacado:{qtd:porTipo.atacado.qtd,total:R2(porTipo.atacado.total)},varejoDoSistema:{qtd:porTipo.frente.qtd,total:R2(porTipo.frente.total)}},
+    margemBruta:{pedidos:mg.pedidos,totalItens:R2(mg.total),porOrigem:Object.fromEntries(Object.entries(mg.porOrigem).map(([k,v])=>[k,{qtd:v.qtd,total:R2(v.total)}])),pedidosSemItens:{qtd:mg.pedidosSemItens.qtd,total:R2(mg.pedidosSemItens.total)}},
+    vendasDoCaixaPorSituacao:cat,caixasAbertosEmOutroDia:caixasOutroDia,leitura});
+}catch(e){ res.status(500).json({erro:e.message}); } });
 app.get("/api/diag/pedido-preco",requireAcesso("acesso_produtos_gestao"),async(req,res)=>{ try{ const num=String(req.query.numero||"").replace(/\D/g,""); let id=String(req.query.id||"").replace(/\D/g,"");
   if(!id&&num){ const r=Object.values(_indicePedidos().porId).find(x=>String(x.numero)===num); id=r?String(r.id):""; if(!id){ const l=await bling(`/pedidos/vendas?numero=${num}`); id=String(((l&&l.data)||[]).find(x=>String(x.numero)===num)?.id||""); } }
   if(!id) return res.status(404).json({erro:"pedido não encontrado"}); let live=null; try{ live=(await bling(`/pedidos/vendas/${id}`)).data; }catch(e){}
