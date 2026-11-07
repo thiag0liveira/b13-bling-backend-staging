@@ -112,6 +112,7 @@ textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:
     <span id="parProd" style="display:none;gap:6px;flex-wrap:wrap;align-items:center"><select id="fOrdem"><option value="menor_margem">Menor margem</option><option value="maior_margem">Maior margem</option><option value="menor_markup">Menor markup</option><option value="maior_markup">Maior markup</option><option value="maior_lucro">Maior lucro</option><option value="maior_fat">Maior faturamento</option><option value="maior_qtd">Mais vendidos</option></select>
       <label class="ic">margem abaixo de <input id="fMax" inputmode="decimal" placeholder="%" style="width:56px"></label>
       <select id="fSo"><option value="">Todos</option><option value="com_custo">Só com custo</option><option value="sem_custo">Só sem custo</option></select></span>
+    <select id="fBase" title="Em que dia cada venda é contada"><option value="">Contar no dia do pedido</option><option value="pagamento">Contar no dia do pagamento no caixa</option></select>
     <input id="fBusca" type="search" placeholder="🔎 cliente, produto, vendedora, nº" enterkeyhint="search" autocomplete="off" style="flex:1;min-width:160px"><button class="chip" onclick="carregar()">Aplicar</button><button class="chip" onclick="atualizarAgora()">🔄 Atualizar</button></div>
     <div id="msgBusca" class="ic" style="white-space:normal;margin-top:6px"></div>
     <div id="msgAtu" style="margin-top:4px"></div>
@@ -132,7 +133,7 @@ let _seq = 0;
 async function carregar() {
   const _meu = ++_seq;
   parProd.style.display = fAg.value === "produto" ? "inline-flex" : "none";
-  const q = new URLSearchParams({ ini: fIni.value, fim: fFim.value, agrupar: fAg.value, busca: fBusca.value.trim(), ordem: fOrdem.value, margemMax: fMax.value.trim(), so: fSo.value });
+  const q = new URLSearchParams({ ini: fIni.value, fim: fFim.value, agrupar: fAg.value, busca: fBusca.value.trim(), ordem: fOrdem.value, margemMax: fMax.value.trim(), so: fSo.value, base: fBase.value });
   const r = await fetch(B + "/api/margem-bruta?" + q, { headers: { "X-Auth-Token": (b13GetSession() || {}).token || "" } }); D = await r.json().catch(() => ({})); if (_meu !== _seq) return; // chegou uma resposta mais nova
   if (!r.ok) { kpis.innerHTML = `<div class="err">${esc(D.erro || "Não consegui carregar.")}</div>`; return; }
   const T = D.totais, k = (v, l, s) => `<div class="kpi"><div class="v">${v}</div><div class="l">${l}</div><div class="s">${s || ""}</div></div>`;
@@ -182,7 +183,7 @@ function ligarData(idT, idD) { const T = document.getElementById(idT), D = docum
     const iso = isoDeBr(T.value); T.style.borderColor = T.value.length === 10 && !iso ? "#ff5f8a" : ""; if (iso && D.value !== iso) { D.value = iso; D.dispatchEvent(new Event("change")); } });
   T.addEventListener("blur", () => { if (!isoDeBr(T.value)) T.value = brDeIso(D.value); T.style.borderColor = ""; }); // data incompleta ou inválida: volta para a que está valendo
   D.addEventListener("change", () => { T.value = brDeIso(D.value); T.style.borderColor = ""; }); T.value = brDeIso(D.value); }
-fIni.value = hoje().slice(0, 8) + "01"; fFim.value = hoje(); ligarData("fIniT", "fIni"); ligarData("fFimT", "fFim"); [fIni, fFim, fAg, fOrdem, fSo].forEach(e => e.addEventListener("change", carregar)); fMax.addEventListener("change", carregar);
+fIni.value = hoje().slice(0, 8) + "01"; fFim.value = hoje(); ligarData("fIniT", "fIni"); ligarData("fFimT", "fFim"); [fIni, fFim, fAg, fOrdem, fSo, fBase].forEach(e => e.addEventListener("change", carregar)); fMax.addEventListener("change", carregar);
 // ---- clientes que entraram no filtro (a soma deles é o faturamento total mostrado) ----
 let CLI_TODOS = false;
 const corMargem = m => m == null ? "#9a95c9" : m < 10 ? "#ff8aa3" : m < 20 ? "#ffd23f" : "#3ce88a";
@@ -219,6 +220,7 @@ function blocoAtualizacao() { const el = document.getElementById("msgAtu"), S = 
 function atualizarMsgBusca() { const b = fBusca.value.trim(), el = document.getElementById("msgBusca"), F = D.faturamento || { total: ((D.totais || {}).fatCusto || 0) + ((D.totais || {}).fatSemCusto || 0), pedidos: (D.totais || {}).pedidos || 0 }, per = brDeIso(fIni.value) + " até " + brDeIso(fFim.value);
   const extra = (D.agrupar === "produto" && (fMax.value.trim() || fSo.value)) ? " (com o filtro de margem/custo aplicado)" : "";
   let t = `<div style="font-size:15px;color:#fff">💰 Faturamento total: <b style="color:#3ce88a;font-size:18px">${brl(F.total)}</b> <span class="ic">· ${F.pedidos} pedido(s) · ${(D.clientesTotal || 0)} cliente(s) · ${per}${extra}</span></div>`;
+  if (fBase.value) t += `<div class="ic" style="white-space:normal;margin-top:2px">📅 Contando pelo dia do pagamento no caixa. Pedido que ainda não passou no caixa, e o varejo lançado direto no Bling, entra no dia do pedido.</div>`;
   if (b) t += F.pedidos ? `<div style="margin-top:2px">🔎 “${esc(b)}”: a busca olha cliente, produto, vendedora e nº do pedido.</div>` : `<div style="margin-top:2px">🔎 Nada encontrado para “${esc(b)}” neste período. A busca olha cliente, produto, vendedora e nº do pedido <b>dentro das datas escolhidas</b>: amplie-as se precisar.</div>`;
   el.innerHTML = t; }
 let _tb; // busca automática: ao digitar (depois de uma pausa), ao tocar em Enter/Ir/Buscar no teclado do celular e ao limpar o campo

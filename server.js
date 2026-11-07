@@ -14947,9 +14947,10 @@ function _filtrarPedidos(q){
   const I=_indicePedidos(), hoje=_diaBRk(Date.now());
   const ini=/^\d{4}-\d{2}-\d{2}$/.test(String(q.ini||""))?q.ini:_diaBRk(Date.now()-29*_DIA), fim=/^\d{4}-\d{2}-\d{2}$/.test(String(q.fim||""))?q.fim:hoje;
   const nrm=x=>String(x||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
-  const busca=nrm(q.busca||"").trim(), prod=nrm(q.produto||"").trim(), min=Number(q.min)||0, max=Number(q.max)||0;
-  const L=I.lista.filter(r=>{
-    if(!r.data||r.data<ini||r.data>fim) return false;
+  const busca=nrm(q.busca||"").trim(), prod=nrm(q.produto||"").trim(), min=Number(q.min)||0, max=Number(q.max)||0, porPag=q.base==="pagamento";
+  let L=I.lista.filter(r=>{
+    const dEf=(porPag&&r.caixa&&r.caixa.em)?_diaBRk(r.caixa.em):r.data; // base "pagamento": venda que passou no caixa conta no dia do pagamento; as demais (ainda sem caixa, varejo do Bling) ficam no dia do pedido
+    if(!r.data||!dEf||dEf<ini||dEf>fim) return false;
     if(q.situacao){ if(q.situacao==="cancelado"){ if(!r.cancelado) return false; } else if(q.situacao==="ativos"){ if(r.cancelado) return false; } else if(String(r.situacaoId)!==String(q.situacao)) return false; }
     else if(r.cancelado&&q.incluirCancelados!=="1") return false;
     if(q.vendedora&&r.vendedor!==q.vendedora) return false;
@@ -14969,6 +14970,7 @@ function _filtrarPedidos(q){
     if(busca){ const dg=busca.replace(/\D/g,""); if(!(nrm(r.cliente).includes(busca)||(dg&&(String(r.numero).includes(dg)||String(r.id)===dg))||nrm(r.vendedor).includes(busca))) return false; }
     if(prod&&!_itensDoPedido(r.id).some(i=>nrm(i.nome).includes(prod))) return false;
     return true; });
+  if(porPag) L=L.map(r=>({...r,dia:(r.caixa&&r.caixa.em)?_diaBRk(r.caixa.em):r.data})); // cópia: o índice compartilhado não é alterado; "dia" é o que a Margem usa para agrupar por dia, semana e mês
   return {L,ini,fim};
 }
 function _metricasPedidos(L,ini,fim){
