@@ -116,9 +116,11 @@ const nEv = {
 const lins = (arr, f) => arr && arr.length ? arr.map(f).join("") : '<div class="muted">—</div>';
 const card = (titulo, corpo, extra) => `<div class="card">${titulo ? `<div class="h"><span>${titulo}</span>${extra || ""}</div>` : ""}${corpo}</div>`;
 function blocoCaixa(c) {
+  const dtAb = c.abertaDia ? c.abertaDia.slice(8) + "/" + c.abertaDia.slice(5, 7) : "";
+  const avisoOutroDia = c.abertoEmOutroDia ? `<div style="color:#ffd23f;font-size:12px;font-weight:600;margin-top:2px">⚠️ Aberto em ${dtAb}. Só ${c.vendasNoDia || 0} venda(s) de hoje entram no Fechamento do dia.</div>` : "";
   const fech = c.fechamento ? ` · fechado ${hora(c.fechadaEm)}${c.fechamento.diferenca != null ? ` · dif ${brl(c.fechamento.diferenca)}` : ""}` : "";
   return `<details class="cx"><summary>👤 ${esc(c.operador || "—")} <span class="tag ${c.tipoCaixa === 'atacado' ? 'tag-ok' : 'tag-warn'}">${c.tipoCaixa === 'atacado' ? 'Atacado' : 'Frente'}</span>
-    <span style="float:right;color:#ffd23f">${brl(c.resumo.totalVendas)}</span><div class="muted" style="font-weight:400">aberto ${hora(c.abertaEm)}${fech} · ${c.resumo.qtdVendas} venda(s)</div></summary>
+    <span style="float:right;color:#ffd23f">${brl(c.resumo.totalVendas)}</span><div class="muted" style="font-weight:400">aberto ${c.abertoEmOutroDia ? dtAb + " " : ""}${hora(c.abertaEm)}${fech} · ${c.resumo.qtdVendas} venda(s)</div>${avisoOutroDia}</summary>
     <div style="margin-top:8px">
       ${(c.resumo.porForma || []).map(f => `<div class="lin"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join("")}
       ${c.totalPix > 0.009 ? `<div class="lin"><span>🔷 Total PIX</span><b>${brl(c.totalPix)}</b></div>` : ""}
@@ -357,6 +359,7 @@ function render() {
         </div>
 
         ${card("📊 Fechamento do dia (nossos caixas)", `<div class="big">${brl(f.totalVendas)}</div><div class="muted" style="margin-bottom:8px">${f.qtdVendas || 0} venda(s)${f.canceladas ? ` · ${f.canceladas} cancelada(s)` : ""}</div>
+          ${f.lucroBruto && f.lucroBruto.fatComCusto > 0.009 ? `<div class="lin" style="font-weight:800"><span>🪙 Lucro bruto <span class="muted">(margem ${String(f.lucroBruto.margemPct).replace(".", ",")}%)</span></span><b style="color:#3ce88a">${brl(f.lucroBruto.valor)}</b></div>${f.lucroBruto.semCusto > 0.009 ? `<div class="muted" style="font-size:12px;margin-bottom:6px">Sem custo cadastrado: ${brl(f.lucroBruto.semCusto)} em ${f.lucroBruto.itensSemCusto} item(ns), fora dessa conta.</div>` : ""}` : ""}
           ${lins(f.porForma, x => `<div class="lin"><span>${esc(x.nome)}</span><b>${brl(x.valor)}</b></div>`)}
           ${f.totalPix > 0.009 ? `<div class="lin"><span>🔷 Total PIX</span><b>${brl(f.totalPix)}</b></div>` : ""}
           <div class="lin" style="font-weight:800"><span>💵 Dinheiro (nossos caixas)</span><b style="color:#3ce88a">${brl(f.dinheiroTotal)}</b></div>

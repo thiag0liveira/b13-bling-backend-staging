@@ -17534,7 +17534,7 @@ app.get("/api/central/resumo",(req,res)=>{
     const ini=_inicioDia(dia), fim=_fimDia(dia);
     const noDia=(ms)=>ms>=ini&&ms<fim;
     const dCx=lerCaixaSessoes();
-    const rc=(s)=>{ const r=resumoSessaoCaixa(s); return { id:s.id, operador:s.operador, tipoCaixa:s.tipoCaixa||"frente", abertaEm:s.abertaEm, fechadaEm:s.fechadaEm||null, resumo:r, totalPix:(r.porForma||[]).filter(f=>/pix/i.test(f.nome)).reduce((a,f)=>a+f.valor,0), fechamento:s.fechamento||null }; };
+    const rc=(s)=>{ const r=resumoSessaoCaixa(s); return { id:s.id, operador:s.operador, tipoCaixa:s.tipoCaixa||"frente", abertaEm:s.abertaEm, fechadaEm:s.fechadaEm||null, resumo:r, totalPix:(r.porForma||[]).filter(f=>/pix/i.test(f.nome)).reduce((a,f)=>a+f.valor,0), fechamento:s.fechamento||null, abertoEmOutroDia:!noDia(s.abertaEm), abertaDia:new Date(s.abertaEm-3*3600e3).toISOString().slice(0,10), vendasNoDia:(s.movimentos||[]).filter(m=>m.tipo==="venda"&&!m.cancelado&&noDia(m.em)).length }; };
     const abertos=(dCx.sessoes||[]).filter(s=>!s.fechadaEm).map(rc);
     const fechadosDia=(dCx.sessoes||[]).filter(s=>s.fechadaEm && (noDia(s.fechadaEm)||noDia(s.abertaEm))).map(rc);
 
@@ -17544,6 +17544,8 @@ app.get("/api/central/resumo",(req,res)=>{
     let totalDia=0, qtdDia=0, sangrias=0, supr=0, canceladas=0, consumidorFinal={qtd:0,valor:0};
     let totalTrocoDia=0; const vendasComTroco=[];
     const vendasDia=[];
+    const _PB=lerProdutosBling().porId; let lbFat=0, lbCusto=0, lbSemCusto=0, lbItensSem=0;
+    const _lucroItem=i=>{ const q=Number(i.quantidade)||0, v=q*(Number(i.valor)||0), pr=i.produtoId?_PB[String(i.produtoId)]:null, cd=i.produtoId?custoNaData(i.produtoId,dia):null, c=cd&&cd.custo>0?cd.custo*q:(pr&&pr.pc>0?pr.pc*q:null); if(c==null){ lbSemCusto+=v; lbItensSem++; } else { lbFat+=v; lbCusto+=c; } };
     (dCx.sessoes||[]).forEach(s=>{
       (s.movimentos||[]).forEach(m=>{
         if(!noDia(m.em)) return;
@@ -17559,14 +17561,15 @@ app.get("/api/central/resumo",(req,res)=>{
         (m.pagamentos||[]).forEach(p=>{ const k=p.formaNome||"—"; porForma[k]=(porForma[k]||0)+(Number(p.valor)||0); porTipo[tipo].porForma[k]=(porTipo[tipo].porForma[k]||0)+(Number(p.valor)||0); });
         const op=m.operador||s.operador||"—"; if(!porOperador[op]) porOperador[op]={qtd:0,valor:0}; porOperador[op].qtd++; porOperador[op].valor+=tot;
         const cli=(m.clienteNome||"").trim(); if(!cli||/consumidor/i.test(cli)){ consumidorFinal.qtd++; consumidorFinal.valor+=tot; } else { if(!clientes[cli]) clientes[cli]={qtd:0,valor:0}; clientes[cli].qtd++; clientes[cli].valor+=tot; }
-        (m.itens||[]).forEach(i=>{ const k=i.nome||("produto "+i.produtoId); if(!produtos[k]) produtos[k]={nome:k,qtd:0,valor:0}; produtos[k].qtd+=Number(i.quantidade)||0; produtos[k].valor+=(Number(i.quantidade)||0)*(Number(i.valor)||0);
+        (m.itens||[]).forEach(i=>{ _lucroItem(i); const k=i.nome||("produto "+i.produtoId); if(!produtos[k]) produtos[k]={nome:k,qtd:0,valor:0}; produtos[k].qtd+=Number(i.quantidade)||0; produtos[k].valor+=(Number(i.quantidade)||0)*(Number(i.valor)||0);
           const modo=i.modoPreco||"não informado"; if(!porModo[modo]) porModo[modo]={itens:0,unidades:0,valor:0}; porModo[modo].itens++; porModo[modo].unidades+=Number(i.quantidade)||0; porModo[modo].valor+=(Number(i.quantidade)||0)*(Number(i.valor)||0); });
       });
     });
     const arr=(o,f)=>Object.entries(o).map(([k,v])=>f(k,v));
     const dinheiroAtacado=+(porTipo.atacado.porForma["Dinheiro"]||0).toFixed(2);
     const dinheiroVarejo=+(porTipo.frente.porForma["Dinheiro"]||0).toFixed(2);
-    const fechamentoDia={ totalVendas:+totalDia.toFixed(2), qtdVendas:qtdDia, canceladas, sangrias:+sangrias.toFixed(2), suprimentos:+supr.toFixed(2),
+    const fechamentoDia={ totalVendas:+totalDia.toFixed(2), qtdVendas:qtdDia,
+      lucroBruto:{ valor:+(lbFat-lbCusto).toFixed(2), margemPct:lbFat>0?+(((lbFat-lbCusto)/lbFat)*100).toFixed(1):null, fatComCusto:+lbFat.toFixed(2), semCusto:+lbSemCusto.toFixed(2), itensSemCusto:lbItensSem }, canceladas, sangrias:+sangrias.toFixed(2), suprimentos:+supr.toFixed(2),
       porForma:arr(porForma,(nome,valor)=>({nome,valor:+valor.toFixed(2)})).sort((a,b)=>b.valor-a.valor),
       totalPix:+Object.entries(porForma).filter(([n])=>/pix/i.test(n)).reduce((a,[,v])=>a+v,0).toFixed(2),
       porOperador:arr(porOperador,(nome,v)=>({nome,qtd:v.qtd,valor:+v.valor.toFixed(2)})).sort((a,b)=>b.valor-a.valor),
